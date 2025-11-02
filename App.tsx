@@ -1,0 +1,163 @@
+
+
+import React, { useState, useCallback } from 'react';
+import { ProcessedVehicleData, Transaction, AiDetection, RtoData, ReportSections } from './types';
+import { UploadView } from './components/UploadView';
+import { DashboardView } from './components/DashboardView';
+import { mockAiDetections, mockRtoDatabase, parseTransactions } from './services/mockData';
+import { generateReport } from './services/pdfService';
+import { ProcessingIcon } from './components/Icons';
+
+
+const processData = (transactions: Transaction[], aiDetections: AiDetection[], rtoDatabase: Record<string, RtoData>): ProcessedVehicleData[] => {
+    const discrepancyCounts: Record<string, number> = {};
+    const suspiciousSessions = new Set<string>();
+    
+    // First pass to identify suspicious charging sessions based on refined logic
+    transactions.forEach(tx => {
+        const detection = aiDetections.find(d => d.plate === tx.plate);
+        if (detection) {
+            const difference = tx.billedKwh - detection.detectedKwh;
+            const absDifference = Math.abs(difference);
+
+            // Calculate percentage difference, handle division by zero or tiny values
+            const percentageDifference = tx.billedKwh > 0.1 ? (absDifference / tx.billedKwh) * 100 : 0;
+
+            // A session is suspicious if the absolute difference is over 5 kWh,
+            // or if the difference is more than 10% AND over 1 kWh.
+            // This avoids flagging tiny, insignificant discrepancies on small charges.
+            const isSuspicious = absDifference > 5.0 || (percentageDifference > 10 && absDifference > 1.0);
+            
+            if (isSuspicious) {
+                suspiciousSessions.add(tx.plate);
+                // Count discrepancies per charger
+                discrepancyCounts[tx.chargerId] = (discrepancyCounts[tx.chargerId] || 0) + 1;
+            }
+        }
+    });
+
+    return transactions.map(tx => {
+        const detection = aiDetections.find(d => d.plate === tx.plate) || {} as Partial<AiDetection>;
+        const rto = rtoDatabase[tx.plate] || {} as Partial<RtoData>;
+
+        const difference = tx.billedKwh - (detection.detectedKwh || tx.billedKwh);
+        let discrepancyFlag: ProcessedVehicleData['charging']['discrepancyFlag'] = 'OK';
+        
+        // A specific transaction is only flagged if it was one of the suspicious ones.
+        // If the associated charger has 3 or more suspicious sessions, it's flagged as a potential fault.
+        if (suspiciousSessions.has(tx.plate)) {
+            if (discrepancyCounts[tx.chargerId] >= 3) {
+                discrepancyFlag = 'Potential Charger Fault';
+            } else {
+                discrepancyFlag = 'Suspicious';
+            }
+        }
+        
+        let score = 100;
+        const overallStatus: string[] = [];
+        
+        const isRegValid = new Date(rto.registrationValidTill || 0) > new Date();
+        const isPucValid = new Date(rto.pollutionValidTill || 0) > new Date();
+        
+        if (!isRegValid) { score -= 20; overallStatus.push(`Reg Expired for ${tx.plate}`); }
+        if (rto.insuranceStatus !== 'Active') { score -= 20; overallStatus.push(`Insurance Expired for ${tx.plate}`); }
+        if (!isPucValid) { score -= 20; overallStatus.push(`PUC Expired for ${tx.plate}`); }
+        if (rto.pendingFine > 0) { score -= 20; overallStatus.push(`Fine Pending: ₹${rto.pendingFine} on ${tx.plate}`); }
+        if (rto.roadTaxStatus !== 'Paid') { score -= 20; overallStatus.push(`Tax Due for ${tx.plate}`); }
+        if (discrepancyFlag !== 'OK') { score -= 20; overallStatus.push(`Charging Discrepancy on ${tx.plate}`); }
+        if (detection.vehicleType === '2-Wheeler' && !detection.helmet) {
+            overallStatus.push(`No Helmet on ${tx.plate}`);
+        }
+        
+        return {
+            plate: tx.plate,
+            vehicleType: detection.vehicleType || 'Other',
+            helmet: detection.helmet === undefined ? null : detection.helmet,
+            timestamp: tx.timestamp,
+            rto: rto as RtoData,
+            amount: tx.amount,
+            charging: {
+                billed: tx.billedKwh,
+                detected: detection.detectedKwh || tx.billedKwh,
+                difference,
+                discrepancyFlag,
+                microBalance: tx.amount > 0 ? tx.amount - Math.floor(tx.amount) : 0,
+            },
+            compliance: {
+                score: Math.max(0, score),
+                fineStatus: rto.pendingFine > 0 ? `₹${rto.pendingFine}` : 'OK',
+                insuranceStatus: rto.insuranceStatus || 'Expired',
+                pucStatus: isPucValid ? 'Valid' : 'Expired',
+                taxStatus: rto.roadTaxStatus || 'Due',
+                registrationStatus: isRegValid ? 'Valid' : 'Expired',
+                overallStatus,
+            }
+        };
+    });
+};
+
+const LoadingOverlay: React.FC = () => (
+    <div className="fixed inset-0 bg-rich-black/80 backdrop-blur-sm flex flex-col items-center justify-center z-50">
+        <ProcessingIcon className="w-24 h-24 text-caribbean-green animate-spin" />
+        <p className="text-2xl text-anti-flash-white mt-4 tracking-widest animate-pulse-slow">ANALYZING DATA...</p>
+    </div>
+);
+
+
+function App() {
+    const [isLoading, setIsLoading] = useState(false);
+    const [analysisResult, setAnalysisResult] = useState<ProcessedVehicleData[] | null>(null);
+    const [parsingError, setParsingError] = useState<string | null>(null);
+
+    const handleAnalyze = useCallback((videoFile: File, transactionLog: string) => {
+        setIsLoading(true);
+        setParsingError(null);
+        // Simulate async processing
+        setTimeout(() => {
+            try {
+                const transactions = parseTransactions(transactionLog);
+                const processed = processData(transactions, mockAiDetections, mockRtoDatabase);
+                setAnalysisResult(processed);
+            } catch (error) {
+                console.error("Failed to process data:", error);
+                const errorMessage = error instanceof Error ? error.message : "Invalid file content.";
+                setParsingError(`Transaction Log Error: ${errorMessage}`);
+            } finally {
+                setIsLoading(false);
+            }
+        }, 2000);
+    }, []);
+
+    const handleGenerateReport = useCallback((dataToReport: ProcessedVehicleData[], sections: ReportSections, summaries: Record<string, string>) => {
+        if (dataToReport && dataToReport.length > 0) {
+            generateReport(dataToReport, sections, summaries);
+        }
+    }, []);
+
+    const handleClearParsingError = useCallback(() => {
+        setParsingError(null);
+    }, []);
+
+    const handleReset = useCallback(() => {
+        setAnalysisResult(null);
+        setParsingError(null);
+    }, []);
+
+    return (
+        <div className="min-h-screen">
+            {isLoading && <LoadingOverlay />}
+            {analysisResult ? (
+                <DashboardView data={analysisResult} onGenerateReport={handleGenerateReport} onReset={handleReset} />
+            ) : (
+                <UploadView 
+                    onAnalyze={handleAnalyze} 
+                    isLoading={isLoading}
+                    parsingError={parsingError}
+                    onClearParsingError={handleClearParsingError}
+                />
+            )}
+        </div>
+    );
+}
+
+export default App;

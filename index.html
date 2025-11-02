@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AI Vehicle Compliance Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Exo+2:wght@400;600;700&display=swap" rel="stylesheet">
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ['Exo 2', 'sans-serif'],
+            },
+            colors: {
+              // Primary Palette
+              'rich-black': '#0D0F11',
+              'anti-flash-white': '#F1F7F5',
+              'caribbean-green': '#00DF81',
+              'bangladesh-green': '#09624C',
+              'mountain-meadow': '#20C295',
+              'frog': '#178D70',
+              // Secondary Palette
+              'pine': '#063B28',
+              'basil': '#084533',
+              'forest': '#095544',
+              'stone': '#707D7D',
+              'pistachio': '#ACD6C4',
+              'input-dark-green': '#032221',
+            },
+            boxShadow: {
+              'glow-green': '0 0 15px rgba(0, 223, 129, 0.4)',
+              'glow-green-lg': '0 0 25px rgba(0, 223, 129, 0.6)',
+            },
+            animation: {
+              'pulse-slow': 'pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+              'fade-in': 'fadeIn 1s ease-in-out',
+              'slide-in-up': 'slideInUp 0.7s ease-out',
+              'border-glow-pulse': 'borderGlow 2s ease-in-out infinite',
+            },
+            keyframes: {
+              fadeIn: { '0%': { opacity: 0 }, '100%': { opacity: 1 } },
+              slideInUp: { '0%': { transform: 'translateY(20px)', opacity: 0 }, '100%': { transform: 'translateY(0)', opacity: 1 } },
+              borderGlow: {
+                '0%, 100%': { 'box-shadow': '0 0 15px rgba(0, 223, 129, 0.5)', 'border-color': 'rgba(0, 223, 129, 0.8)' },
+                '50%': { 'box-shadow': '0 0 30px rgba(0, 223, 129, 0.9)', 'border-color': '#00DF81' },
+              },
+            },
+          },
+        },
+      }
+    </script>
+  <script type="importmap">
+{
+  "imports": {
+    "@google/genai": "https://esm.sh/@google/genai",
+    "recharts": "https://aistudiocdn.com/recharts@^3.3.0",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
+    "react/": "https://aistudiocdn.com/react@^19.2.0/",
+    "react": "https://aistudiocdn.com/react@^19.2.0",
+    "jspdf-autotable": "https://aistudiocdn.com/jspdf-autotable@^5.0.2",
+    "jspdf": "https://aistudiocdn.com/jspdf@^3.0.3"
+  }
+}
+</script>
+</head>
+  <body class="bg-rich-black text-anti-flash-white font-sans">
+    <div id="root"></div>
+  </body>
+</html>
