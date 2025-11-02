@@ -1,6 +1,6 @@
 
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { ResponsiveContainer, RadialBarChart, RadialBar, PolarAngleAxis, Cell } from 'recharts';
 import { ProcessedVehicleData, ReportSections } from '../types';
 import { CheckCircleIcon, WarningIcon, XCircleIcon, SparklesIcon, ProcessingIcon, ChevronDownIcon, CogIcon, SearchIcon, CarIcon, MotorcycleIcon, TruckIcon, QuestionMarkIcon, MoneyIcon } from './Icons';
@@ -31,15 +31,19 @@ const getStatusIcon = (status: string) => {
 };
 
 const formatDate = (dateString: string) => {
-    try {
-        return new Date(dateString).toLocaleDateString('en-GB', {
-            day: '2-digit',
-            month: 'short',
-            year: 'numeric'
-        });
-    } catch (e) {
-        return dateString;
+    if (!dateString) {
+        return '—'; // Consistent placeholder for missing dates.
     }
+    const date = new Date(dateString);
+    // Check if the date is valid. An invalid date's getTime() returns NaN.
+    if (isNaN(date.getTime())) {
+        return dateString; // Return original string if it's not a valid date.
+    }
+    return date.toLocaleDateString('en-GB', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric'
+    });
 };
 
 type SortableKeys = 'plate' | 'vehicleType' | 'fine' | 'timestamp';
@@ -280,7 +284,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ data, onGenerateRe
         }
     };
 
-     const handleGenerateSuggestions = async () => {
+    const handleGenerateSuggestions = async () => {
         setIsGeneratingSuggestions(true);
         setSuggestionsError(null);
         setAiSuggestions(null);
@@ -734,7 +738,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ data, onGenerateRe
                                         return (
                                             <tr 
                                                 key={v.plate} 
-                                                className={`border-b border-bangladesh-green/50 hover:bg-forest transition-all ${isHighBalance ? 'bg-pine border-l-4 border-caribbean-green shadow-glow-green' : ''}`}
+                                                className={`border-b border-bangladesh-green/50 hover:bg-forest transition-all ${isHighBalance ? 'bg-pine border-l-4 border-caribbean-green animate-border-glow-pulse' : ''}`}
                                             >
                                                 <td className="p-3 font-mono">{v.plate}</td>
                                                 <td className={`p-3 font-bold ${isHighBalance ? 'text-caribbean-green text-lg' : 'text-anti-flash-white'}`}>
@@ -793,17 +797,40 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ data, onGenerateRe
                             <p className="text-stone mt-2">Analyzing fleet data...</p>
                         </div>
                     ) : suggestionsError ? (
-                        <p className="text-red-500">{suggestionsError}</p>
-                    ) : aiSuggestions ? (
-                        <div className="text-sm text-anti-flash-white/90 whitespace-pre-wrap font-mono max-h-80 overflow-y-auto">{aiSuggestions}</div>
+                        <div className="text-center py-4">
+                            <p className="text-red-500 mb-4">{suggestionsError}</p>
+                            <button
+                                onClick={handleGenerateSuggestions}
+                                className="w-full flex items-center justify-center gap-2 px-4 py-2 text-md font-semibold rounded-md bg-red-500/20 text-red-400 hover:bg-red-500/40 transition-all"
+                            >
+                                <SparklesIcon className="w-5 h-5" />
+                                Retry
+                            </button>
+                        </div>
+                    ) : aiSuggestions !== null ? (
+                        <>
+                            <div className="text-sm text-anti-flash-white/90 whitespace-pre-wrap font-mono max-h-80 overflow-y-auto mb-4">{aiSuggestions || "No specific suggestions provided."}</div>
+                             <button
+                                onClick={handleGenerateSuggestions}
+                                disabled={isGeneratingSuggestions}
+                                className="w-full flex items-center justify-center gap-2 px-4 py-2 text-md font-semibold rounded-md bg-caribbean-green/20 text-caribbean-green hover:bg-caribbean-green/40 disabled:opacity-50 transition-all"
+                            >
+                                <SparklesIcon className="w-5 h-5" />
+                                Regenerate Suggestions
+                            </button>
+                        </>
                     ) : (
-                        <button
-                            onClick={handleGenerateSuggestions}
-                            className="w-full flex items-center justify-center gap-2 px-4 py-2 text-md font-semibold rounded-md bg-caribbean-green/20 text-caribbean-green hover:bg-caribbean-green/40 disabled:opacity-50 transition-all"
-                        >
-                            <SparklesIcon className="w-5 h-5" />
-                            Generate AI Suggestions
-                        </button>
+                        <div className="text-center py-4">
+                            <p className="text-stone mb-4">Get AI-powered insights for your fleet.</p>
+                            <button
+                                onClick={handleGenerateSuggestions}
+                                disabled={isGeneratingSuggestions}
+                                className="w-full flex items-center justify-center gap-2 px-4 py-2 text-md font-semibold rounded-md bg-caribbean-green/20 text-caribbean-green hover:bg-caribbean-green/40 transition-all"
+                            >
+                                <SparklesIcon className="w-5 h-5" />
+                                Generate Fleet Suggestions
+                            </button>
+                        </div>
                     )}
                 </div>
                 <div className="space-y-3">

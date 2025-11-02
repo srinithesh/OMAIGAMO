@@ -65,7 +65,7 @@ const processData = (transactions: Transaction[], aiDetections: AiDetection[], r
         if (rto.pendingFine > 0) { score -= 20; overallStatus.push(`Fine Pending: ₹${rto.pendingFine} on ${tx.plate}`); }
         if (rto.roadTaxStatus !== 'Paid') { score -= 20; overallStatus.push(`Tax Due for ${tx.plate}`); }
         if (discrepancyFlag !== 'OK') { score -= 20; overallStatus.push(`Charging Discrepancy on ${tx.plate}`); }
-        if (detection.vehicleType === '2-Wheeler' && !detection.helmet) {
+        if (detection.vehicleType === '2-Wheeler' && detection.helmet === false) {
             overallStatus.push(`No Helmet on ${tx.plate}`);
         }
         
