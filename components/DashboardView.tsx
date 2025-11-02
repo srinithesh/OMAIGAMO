@@ -23,7 +23,7 @@ const getStatusIcon = (status: string) => {
         case 'due':
             return <XCircleIcon className="w-6 h-6 text-frog" />;
         case 'suspicious':
-        case 'potential charger fault':
+        case 'potential station fault':
             return <WarningIcon className="w-6 h-6 text-yellow-400" />;
         default:
             return <span className="text-stone">-</span>;
@@ -114,14 +114,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ data, onGenerateRe
     const [filters, setFilters] = useState({
         compliance: 'all',
         vehicleType: 'all',
-        charging: 'all'
+        fueling: 'all'
     });
     const [aiSuggestions, setAiSuggestions] = useState<string | null>(null);
     const [isGeneratingSuggestions, setIsGeneratingSuggestions] = useState(false);
     const [suggestionsError, setSuggestionsError] = useState<string | null>(null);
     const [reportOptions, setReportOptions] = useState<ReportSections>({
         includeComplianceDetails: true,
-        includeChargingDiscrepancies: true,
+        includeFuelingDiscrepancies: true,
         includeDetailedInsights: false,
     });
     const [showReportOptions, setShowReportOptions] = useState(false);
@@ -132,7 +132,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ data, onGenerateRe
     const [collectedBalances, setCollectedBalances] = useState<Set<string>>(new Set());
 
     const overallScore = data.reduce((acc, v) => acc + v.compliance.score, 0) / (data.length || 1);
-    const discrepancyData = data.filter(v => v.charging.discrepancyFlag !== 'OK');
+    const discrepancyData = data.filter(v => v.fueling.discrepancyFlag !== 'OK');
     const violations = data.flatMap(v => v.compliance.overallStatus);
 
     const reviewedDiscrepancyCount = useMemo(() => {
@@ -143,11 +143,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ data, onGenerateRe
         const balances: Record<string, { total: number; count: number; lastSeen: string }> = {};
 
         data.forEach(v => {
-            if (v.charging.microBalance > 0.001) { // Ignore tiny floating point errors
+            if (v.fueling.microBalance > 0.001) { // Ignore tiny floating point errors
                 if (!balances[v.plate]) {
                     balances[v.plate] = { total: 0, count: 0, lastSeen: v.timestamp };
                 }
-                balances[v.plate].total += v.charging.microBalance;
+                balances[v.plate].total += v.fueling.microBalance;
                 balances[v.plate].count += 1;
                 if (new Date(v.timestamp) > new Date(balances[v.plate].lastSeen)) {
                     balances[v.plate].lastSeen = v.timestamp;
@@ -176,7 +176,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ data, onGenerateRe
             if (filters.compliance === 'violations' && v.compliance.overallStatus.length === 0) return false;
             if (filters.compliance === 'compliant' && v.compliance.overallStatus.length > 0) return false;
             if (filters.vehicleType !== 'all' && v.vehicleType !== filters.vehicleType) return false;
-            if (filters.charging !== 'all' && v.charging.discrepancyFlag !== filters.charging) return false;
+            if (filters.fueling !== 'all' && v.fueling.discrepancyFlag !== filters.fueling) return false;
 
             // Date range filter
             if (dateRange.start || dateRange.end) {
@@ -255,7 +255,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ data, onGenerateRe
         setFilters({
             compliance: 'all',
             vehicleType: 'all',
-            charging: 'all'
+            fueling: 'all'
         });
         setDateRange({ start: '', end: '' });
         setSearchQuery('');
@@ -373,7 +373,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ data, onGenerateRe
         : 'Generate Filtered Report';
     
     const isReportButtonDisabled = (selectedRows.size === 0 && filteredData.length === 0) || 
-                                     (!reportOptions.includeComplianceDetails && !reportOptions.includeChargingDiscrepancies && !reportOptions.includeDetailedInsights);
+                                     (!reportOptions.includeComplianceDetails && !reportOptions.includeFuelingDiscrepancies && !reportOptions.includeDetailedInsights);
 
 
     const DetailRow: React.FC<{ vehicle: ProcessedVehicleData }> = ({ vehicle }) => {
@@ -393,14 +393,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ data, onGenerateRe
                         </div>
                     </div>
 
-                    {/* Card 2: Charging Analysis */}
+                    {/* Card 2: Fueling Analysis */}
                     <div className="flex-1 bg-basil/20 p-4 rounded-lg border border-bangladesh-green/50">
-                        <h4 className="font-bold text-caribbean-green mb-3 border-b border-bangladesh-green/30 pb-2">Charging Analysis</h4>
+                        <h4 className="font-bold text-caribbean-green mb-3 border-b border-bangladesh-green/30 pb-2">Fueling Analysis</h4>
                         <div className="space-y-2 text-sm">
-                           <p><span className="font-semibold text-stone w-32 inline-block">Status:</span> {vehicle.charging.discrepancyFlag}</p>
-                            <p><span className="font-semibold text-stone w-32 inline-block">Billed Power:</span> {vehicle.charging.billed.toFixed(2)} kWh</p>
-                            <p><span className="font-semibold text-stone w-32 inline-block">Detected Power:</span> {vehicle.charging.detected.toFixed(2)} kWh</p>
-                            <p><span className="font-semibold text-stone w-32 inline-block">Discrepancy:</span> <span className={Math.abs(vehicle.charging.difference) > 0.1 ? 'text-red-400 font-bold' : ''}>{vehicle.charging.difference.toFixed(2)} kWh</span></p>
+                           <p><span className="font-semibold text-stone w-32 inline-block">Status:</span> {vehicle.fueling.discrepancyFlag}</p>
+                            <p><span className="font-semibold text-stone w-32 inline-block">Billed Fuel:</span> {vehicle.fueling.billed.toFixed(2)} L</p>
+                            <p><span className="font-semibold text-stone w-32 inline-block">Detected Fuel:</span> {vehicle.fueling.detected.toFixed(2)} L</p>
+                            <p><span className="font-semibold text-stone w-32 inline-block">Discrepancy:</span> <span className={Math.abs(vehicle.fueling.difference) > 0.1 ? 'text-red-400 font-bold' : ''}>{vehicle.fueling.difference.toFixed(2)} L</span></p>
                         </div>
                     </div>
                 </div>
@@ -499,18 +499,18 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ data, onGenerateRe
                                 </select>
                             </div>
                             <div className="flex items-center gap-2">
-                                <label htmlFor="charging-filter" className="text-stone font-semibold text-sm">Charging:</label>
+                                <label htmlFor="fueling-filter" className="text-stone font-semibold text-sm">Fueling:</label>
                                 <select
-                                    id="charging-filter"
-                                    name="charging"
-                                    value={filters.charging}
+                                    id="fueling-filter"
+                                    name="fueling"
+                                    value={filters.fueling}
                                     onChange={handleFilterChange}
                                     className="bg-basil/50 border border-bangladesh-green rounded-md px-3 py-1.5 text-anti-flash-white focus:ring-1 focus:ring-caribbean-green focus:outline-none transition-all"
                                 >
                                     <option value="all">All</option>
                                     <option value="OK">OK</option>
                                     <option value="Suspicious">Suspicious</option>
-                                    <option value="Potential Charger Fault">Charger Fault</option>
+                                    <option value="Potential Station Fault">Station Fault</option>
                                 </select>
                             </div>
                              {/* Date Filters */}
@@ -562,7 +562,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ data, onGenerateRe
                                         />
                                     </th>
                                     <th className="p-3 w-8"></th>
-                                    {['Plate', 'Date', 'Vehicle', 'Helmet', 'Fine', 'Insurance', 'PUC', 'Tax', 'Charging', 'Status'].map(h => {
+                                    {['Plate', 'Date', 'Vehicle', 'Helmet', 'Fine', 'Insurance', 'PUC', 'Tax', 'Fueling', 'Status'].map(h => {
                                         const sortableColumns: Partial<Record<string, SortableKeys>> = {
                                             'Plate': 'plate',
                                             'Date': 'timestamp',
@@ -623,9 +623,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ data, onGenerateRe
                                                 <td className="p-3">{getStatusIcon(v.compliance.pucStatus)}</td>
                                                 <td className="p-3">{getStatusIcon(v.compliance.taxStatus)}</td>
                                                 <td className="p-3">
-                                                    {v.charging.discrepancyFlag !== 'OK' && reviewedDiscrepancies.has(v.plate)
+                                                    {v.fueling.discrepancyFlag !== 'OK' && reviewedDiscrepancies.has(v.plate)
                                                         ? <span title="Discrepancy Reviewed"><CheckCircleIcon className="w-6 h-6 text-pistachio" /></span>
-                                                        : getStatusIcon(v.charging.discrepancyFlag)}
+                                                        : getStatusIcon(v.fueling.discrepancyFlag)}
                                                 </td>
                                                 <td className="p-3 text-frog">{v.compliance.overallStatus.length > 0 ? v.compliance.overallStatus[0].split(' on ')[0] : <span className="text-caribbean-green">OK</span>}</td>
                                             </tr>
@@ -653,12 +653,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ data, onGenerateRe
                     </div>
                 </div>
 
-                {/* Charging Discrepancy Summary */}
+                {/* Fueling Discrepancy Summary */}
                 {discrepancyData.length > 0 && (
                     <div className="bg-basil/30 backdrop-blur-sm rounded-lg p-4 border border-bangladesh-green animate-slide-in-up" style={{ animationDelay: '200ms'}}>
                         <div className="flex justify-between items-center mb-4">
                             <h2 className="text-xl font-semibold text-anti-flash-white">
-                                Charging Discrepancy Detections ({discrepancyData.length} total, {reviewedDiscrepancyCount} reviewed)
+                                Fueling Discrepancy Detections ({discrepancyData.length} total, {reviewedDiscrepancyCount} reviewed)
                             </h2>
                              <div className="flex gap-2">
                                 <button
@@ -681,7 +681,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ data, onGenerateRe
                             <table className="w-full text-left">
                                 <thead className="border-b-2 border-bangladesh-green text-stone">
                                     <tr>
-                                        {['Plate', 'Billed (kWh)', 'Detected (kWh)', 'Difference', 'Flag', 'Action'].map(h => (
+                                        {['Plate', 'Billed (L)', 'Detected (L)', 'Difference (L)', 'Flag', 'Action'].map(h => (
                                             <th key={h} className="p-3">{h}</th>
                                         ))}
                                     </tr>
@@ -690,10 +690,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ data, onGenerateRe
                                     {discrepancyData.map((v, i) => (
                                         <tr key={i} className={`border-b border-bangladesh-green/50 hover:bg-frog/30 transition-all ${reviewedDiscrepancies.has(v.plate) ? 'bg-forest/30 opacity-60' : 'bg-frog/20'}`}>
                                             <td className="p-3 font-mono">{v.plate}</td>
-                                            <td className="p-3">{v.charging.billed.toFixed(2)}</td>
-                                            <td className="p-3">{v.charging.detected.toFixed(2)}</td>
-                                            <td className={`p-3 font-bold text-red-400`}>{v.charging.difference.toFixed(2)}</td>
-                                            <td className="p-3 text-yellow-400 flex items-center gap-2"><WarningIcon className="w-5 h-5" />{v.charging.discrepancyFlag}</td>
+                                            <td className="p-3">{v.fueling.billed.toFixed(2)}</td>
+                                            <td className="p-3">{v.fueling.detected.toFixed(2)}</td>
+                                            <td className={`p-3 font-bold text-red-400`}>{v.fueling.difference.toFixed(2)}</td>
+                                            <td className="p-3 text-yellow-400 flex items-center gap-2"><WarningIcon className="w-5 h-5" />{v.fueling.discrepancyFlag}</td>
                                             <td className="p-3">
                                                 <button
                                                     onClick={() => toggleReviewedStatus(v.plate)}
@@ -868,12 +868,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ data, onGenerateRe
                                 <label className="flex items-center gap-3 cursor-pointer">
                                     <input 
                                         type="checkbox" 
-                                        name="includeChargingDiscrepancies"
-                                        checked={reportOptions.includeChargingDiscrepancies} 
+                                        name="includeFuelingDiscrepancies"
+                                        checked={reportOptions.includeFuelingDiscrepancies} 
                                         onChange={handleReportOptionChange}
                                         className="bg-transparent border-stone rounded focus:ring-caribbean-green text-caribbean-green cursor-pointer" 
                                     />
-                                    Charging Discrepancy Analysis
+                                    Fueling Discrepancy Analysis
                                  </label>
                                  <label className="flex items-center gap-3 cursor-pointer">
                                     <input 

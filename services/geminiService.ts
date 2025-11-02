@@ -1,11 +1,12 @@
 
+
 import { ProcessedVehicleData } from '../types';
 
 export async function getComplianceSummary(vehicleData: ProcessedVehicleData): Promise<string> {
     const { GoogleGenAI } = await import('@google/genai');
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
     const model = 'gemini-2.5-flash';
-    const { rto, compliance, charging, helmet, vehicleType } = vehicleData;
+    const { rto, compliance, fueling, helmet, vehicleType } = vehicleData;
 
     // Create a simplified object for the prompt
     const promptData = {
@@ -20,9 +21,9 @@ export async function getComplianceSummary(vehicleData: ProcessedVehicleData): P
             tax: compliance.taxStatus,
             fine: rto.pendingFine > 0 ? `₹${rto.pendingFine} for ${rto.fineReason}` : 'None',
         },
-        chargingCheck: {
-            status: charging.discrepancyFlag,
-            discrepancy: charging.difference.toFixed(2) + ' kWh'
+        fuelingCheck: {
+            status: fueling.discrepancyFlag,
+            discrepancy: fueling.difference.toFixed(2) + ' L'
         }
     };
 
@@ -74,7 +75,7 @@ export async function getOverallSuggestions(data: ProcessedVehicleData[]): Promi
         totalVehicles,
         averageComplianceScore: overallScore.toFixed(2),
         violationSummary: violationCounts,
-        chargingDiscrepancies: data.filter(v => v.charging.discrepancyFlag !== 'OK').length,
+        fuelingDiscrepancies: data.filter(v => v.fueling.discrepancyFlag !== 'OK').length,
     };
 
     const prompt = `

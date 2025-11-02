@@ -26,7 +26,7 @@ export const generateReport = (data: ProcessedVehicleData[], sections: ReportSec
     doc.text("Unified Compliance Details", 14, currentY);
     autoTable(doc, {
       startY: currentY + 5,
-      head: [['Plate', 'Vehicle', 'Helmet', 'Fine (₹)', 'Insurance', 'PUC', 'Tax', 'Charging']],
+      head: [['Plate', 'Vehicle', 'Helmet', 'Fine (₹)', 'Insurance', 'PUC', 'Tax', 'Fueling']],
       body: data.map(v => [
         v.plate,
         v.vehicleType,
@@ -35,7 +35,7 @@ export const generateReport = (data: ProcessedVehicleData[], sections: ReportSec
         v.compliance.insuranceStatus,
         v.compliance.pucStatus,
         v.compliance.taxStatus,
-        v.charging.discrepancyFlag,
+        v.fueling.discrepancyFlag,
       ]),
       theme: 'grid',
       headStyles: { fillColor: [9, 98, 76] }, // #09624C (Bangladesh Green)
@@ -44,25 +44,25 @@ export const generateReport = (data: ProcessedVehicleData[], sections: ReportSec
   }
   
 
-  // Charging Discrepancy Analysis Table
-  const discrepancyData = data.filter(v => v.charging.discrepancyFlag !== 'OK');
-  if (sections.includeChargingDiscrepancies && discrepancyData.length > 0) {
+  // Fueling Discrepancy Analysis Table
+  const discrepancyData = data.filter(v => v.fueling.discrepancyFlag !== 'OK');
+  if (sections.includeFuelingDiscrepancies && discrepancyData.length > 0) {
     if (currentY > 250) { // Check for page break
         doc.addPage();
         currentY = 20;
     }
     doc.setFontSize(16);
     doc.setFont('helvetica', 'bold');
-    doc.text("Charging Discrepancy Analysis", 14, currentY);
+    doc.text("Fueling Discrepancy Analysis", 14, currentY);
     autoTable(doc, {
         startY: currentY + 5,
-        head: [['Plate', 'Billed (kWh)', 'Detected (kWh)', 'Difference (kWh)', 'Flag']],
+        head: [['Plate', 'Billed (L)', 'Detected (L)', 'Difference (L)', 'Flag']],
         body: discrepancyData.map(v => [
             v.plate,
-            v.charging.billed.toFixed(2),
-            v.charging.detected.toFixed(2),
-            v.charging.difference.toFixed(2),
-            v.charging.discrepancyFlag,
+            v.fueling.billed.toFixed(2),
+            v.fueling.detected.toFixed(2),
+            v.fueling.difference.toFixed(2),
+            v.fueling.discrepancyFlag,
         ]),
         theme: 'grid',
         headStyles: { fillColor: [9, 98, 76] }, // #09624C (Bangladesh Green)

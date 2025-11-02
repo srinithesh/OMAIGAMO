@@ -3,16 +3,16 @@
 export interface Transaction {
   timestamp: string;
   plate: string;
-  billedKwh: number;
+  billedLiters: number;
   amount: number;
-  chargerId: string;
+  stationId: string;
 }
 
 export interface AiDetection {
   plate: string;
   vehicleType: '2-Wheeler' | '4-Wheeler' | 'Truck' | 'Other';
   helmet: boolean | null;
-  detectedKwh: number;
+  detectedLiters: number;
   timestamp: string;
 }
 
@@ -33,11 +33,11 @@ export interface ProcessedVehicleData {
   helmet: boolean | null;
   timestamp: string;
   rto: RtoData;
-  charging: {
+  fueling: {
     billed: number;
     detected: number;
     difference: number;
-    discrepancyFlag: 'OK' | 'Suspicious' | 'Potential Charger Fault';
+    discrepancyFlag: 'OK' | 'Suspicious' | 'Potential Station Fault';
     microBalance: number;
   };
   amount: number;
@@ -54,6 +54,6 @@ export interface ProcessedVehicleData {
 
 export interface ReportSections {
   includeComplianceDetails: boolean;
-  includeChargingDiscrepancies: boolean;
+  includeFuelingDiscrepancies: boolean;
   includeDetailedInsights: boolean;
 }

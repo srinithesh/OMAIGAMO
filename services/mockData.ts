@@ -5,28 +5,28 @@ export const mockAiDetections: AiDetection[] = [
     "plate": "KA03AB1234",
     "vehicleType": "2-Wheeler",
     "helmet": false,
-    "detectedKwh": 12.5,
+    "detectedLiters": 12.5,
     "timestamp": "2025-10-31T10:20:00"
   },
   {
     "plate": "TN10CD5678",
     "vehicleType": "4-Wheeler",
     "helmet": null,
-    "detectedKwh": 45.0,
+    "detectedLiters": 45.0,
     "timestamp": "2025-10-31T10:22:30"
   },
   {
     "plate": "MH12EF9012",
     "vehicleType": "4-Wheeler",
     "helmet": null,
-    "detectedKwh": 30.2,
+    "detectedLiters": 30.2,
     "timestamp": "2025-11-01T10:25:10"
   },
   {
     "plate": "DL05GH3456",
     "vehicleType": "2-Wheeler",
     "helmet": true,
-    "detectedKwh": 14.8,
+    "detectedLiters": 14.8,
     "timestamp": "2025-11-01T10:28:05"
   }
 ];
@@ -76,69 +76,75 @@ export const mockRtoDatabase: Record<string, RtoData> = {
 
 export const parseTransactions = (fileContent: string): Transaction[] => {
   if (!fileContent || !fileContent.trim()) {
-    throw new Error("The transaction log file is empty.");
+    // Return an empty array instead of throwing an error for empty files.
+    return [];
   }
   const lines = fileContent.trim().split('\n');
   if (lines.length < 2) {
-    throw new Error("The log must contain a header and at least one data row.");
+    // Also return empty array if there's no data.
+    return [];
   }
 
   const headers = lines[0].split(',').map(h => h.trim());
   const transactions: Transaction[] = [];
 
-  const requiredHeaders = ['Timestamp', 'Plate', 'Billed_kWh', 'Amount (₹)', 'Charger_ID'];
-  const missingHeaders = requiredHeaders.filter(rh => !headers.includes(rh));
-  if (missingHeaders.length > 0) {
-    throw new Error(`Missing required column(s): ${missingHeaders.join(', ')}.`);
-  }
-
-
-  const keyMap: Record<string, string> = {
-    'Timestamp': 'timestamp',
-    'Plate': 'plate',
-    'Billed_kWh': 'billedKwh',
-    'Amount (₹)': 'amount',
-    'Charger_ID': 'chargerId'
+  // Map headers to their indices. If a header is not found, its index will be -1.
+  const headerMap = {
+    timestamp: headers.indexOf('Timestamp'),
+    plate: headers.indexOf('Plate'),
+    billedLiters: headers.indexOf('Billed_Liters'),
+    amount: headers.indexOf('Amount (₹)'),
+    stationId: headers.indexOf('Station_ID'),
   };
 
   for (let i = 1; i < lines.length; i++) {
     const line = lines[i];
     if (!line.trim()) continue; // Skip empty lines
     const values = line.split(',').map(v => v.trim());
-    
-    if (values.length !== headers.length) {
-        throw new Error(`Row ${i + 1} has an incorrect number of columns. Expected ${headers.length}, but found ${values.length}.`);
+
+    // Basic data integrity check. Warn in console instead of throwing.
+    if (values.length > headers.length) {
+      console.warn(`Row ${i + 1} has more columns than headers. Data might be misaligned.`);
     }
 
-    const transaction: any = {};
-    headers.forEach((header, index) => {
-      const key = keyMap[header] || header.toLowerCase();
-      const value = values[index];
-      transaction[key] = isNaN(Number(value)) || value === '' ? value : Number(value);
-    });
-    transactions.push(transaction as Transaction);
+    // Plate is the most critical piece of info. If it's missing, skip the row.
+    const plate = headerMap.plate !== -1 ? values[headerMap.plate] : undefined;
+    if (!plate) {
+      console.warn(`Skipping row ${i + 1} due to missing 'Plate' information.`);
+      continue;
+    }
+
+    const transaction: Transaction = {
+      timestamp: headerMap.timestamp !== -1 ? values[headerMap.timestamp] : new Date().toISOString(),
+      plate: plate,
+      billedLiters: headerMap.billedLiters !== -1 ? parseFloat(values[headerMap.billedLiters]) || 0 : 0,
+      amount: headerMap.amount !== -1 ? parseFloat(values[headerMap.amount]) || 0 : 0,
+      stationId: headerMap.stationId !== -1 ? values[headerMap.stationId] : 'N/A',
+    };
+    
+    transactions.push(transaction);
   }
   return transactions;
 };
 
 
 export const getMockTransactionCsv = (): string => {
-  return `Timestamp,Plate,Billed_kWh,Amount (₹),Charger_ID
-2025-10-31T10:20:00,KA03AB1234,15.0,750.75,EV-CH-01
-2025-10-31T10:22:30,TN10CD5678,45.0,2250.95,EV-CH-01
-2025-11-01T10:25:10,MH12EF9012,35.0,1750.50,EV-CH-02
-2025-11-01T10:28:05,DL05GH3456,15.0,755.00,EV-CH-01
-2025-11-02T11:00:00,KA03AB1234,10.0,500.50,EV-CH-03
-2025-11-02T12:15:00,TN10CD5678,20.0,1000.95,EV-CH-02
-2025-11-02T14:30:00,TN10CD5678,30.0,1500.95,EV-CH-01
-2025-11-03T09:05:00,TN10CD5678,5.0,250.95,EV-CH-04
-2025-11-03T13:00:00,TN10CD5678,50.0,2500.95,EV-CH-01
-2025-11-04T10:00:00,TN10CD5678,48.0,2400.95,EV-CH-02
-2025-11-04T18:20:00,TN10CD5678,22.0,1100.95,EV-CH-03
-2025-11-05T11:45:00,TN10CD5678,15.0,750.95,EV-CH-01
-2025-11-06T08:00:00,TN10CD5678,18.0,900.95,EV-CH-04
-2025-11-06T15:00:00,TN10CD5678,33.0,1650.95,EV-CH-02
-2025-11-07T12:00:00,TN10CD5678,25.0,1250.95,EV-CH-01
-2025-11-08T09:30:00,MH12EF9012,20.0,1000.80,EV-CH-02
+  return `Timestamp,Plate,Billed_Liters,Amount (₹),Station_ID
+2025-10-31T10:20:00,KA03AB1234,15.0,1450.75,FS-01
+2025-10-31T10:22:30,TN10CD5678,45.0,4350.95,FS-01
+2025-11-01T10:25:10,MH12EF9012,35.0,3450.50,FS-02
+2025-11-01T10:28:05,DL05GH3456,15.0,1505.00,FS-01
+2025-11-02T11:00:00,KA03AB1234,10.0,980.50,FS-03
+2025-11-02T12:15:00,TN10CD5678,20.0,1950.95,FS-02
+2025-11-02T14:30:00,TN10CD5678,30.0,2950.95,FS-01
+2025-11-03T09:05:00,TN10CD5678,5.0,490.95,FS-04
+2025-11-03T13:00:00,TN10CD5678,50.0,4950.95,FS-01
+2025-11-04T10:00:00,TN10CD5678,48.0,4700.95,FS-02
+2025-11-04T18:20:00,TN10CD5678,22.0,2150.95,FS-03
+2025-11-05T11:45:00,TN10CD5678,15.0,1480.95,FS-01
+2025-11-06T08:00:00,TN10CD5678,18.0,1780.95,FS-04
+2025-11-06T15:00:00,TN10CD5678,33.0,3250.95,FS-02
+2025-11-07T12:00:00,TN10CD5678,25.0,2480.95,FS-01
+2025-11-08T09:30:00,MH12EF9012,20.0,1980.80,FS-02
 `;
 }
