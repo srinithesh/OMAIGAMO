@@ -1,5 +1,3 @@
-
-
 import { ProcessedVehicleData } from '../types';
 
 export async function getComplianceSummary(vehicleData: ProcessedVehicleData): Promise<string> {
@@ -51,8 +49,9 @@ export async function getComplianceSummary(vehicleData: ProcessedVehicleData): P
         });
         return response.text.trim();
     } catch (error) {
-        console.error("Error calling Gemini API:", error);
-        throw new Error("Failed to generate AI summary.");
+        console.error("Error calling Gemini API for compliance summary:", error);
+        const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
+        throw new Error(`Failed to generate AI summary: ${errorMessage}`);
     }
 }
 
@@ -65,8 +64,9 @@ export async function getOverallSuggestions(data: ProcessedVehicleData[]): Promi
     const totalVehicles = data.length;
     const overallScore = data.reduce((acc, v) => acc + v.compliance.score, 0) / (totalVehicles || 1);
     
+    // Improved aggregation logic to correctly group violation types
     const violationCounts = data.flatMap(v => v.compliance.overallStatus).reduce((acc, status) => {
-        const key = status.split(' on ')[0].split(' for ')[0];
+        const key = status.split(' on ')[0].split(' for ')[0].split(':')[0].trim();
         acc[key] = (acc[key] || 0) + 1;
         return acc;
     }, {} as Record<string, number>);
@@ -84,6 +84,8 @@ export async function getOverallSuggestions(data: ProcessedVehicleData[]): Promi
 
         Rules:
         - Provide a brief, high-level overview of the fleet's current status.
+        - Pay close attention to the \`violationSummary\` which details the frequency of each type of violation.
+        - Prioritize your recommendations to address the most common issues first, making your advice data-driven.
         - Structure your recommendations under three distinct headings: "Immediate Actions", "Policy Recommendations", and "Potential Risks".
         - Use bullet points for each recommendation.
         - Ensure the tone is professional, authoritative, and helpful.
@@ -101,7 +103,8 @@ export async function getOverallSuggestions(data: ProcessedVehicleData[]): Promi
         });
         return response.text.trim();
     } catch (error) {
-        console.error("Error calling Gemini API for suggestions:", error);
-        throw new Error("Failed to generate AI suggestions.");
+        console.error("Error calling Gemini API for overall suggestions:", error);
+        const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
+        throw new Error(`Failed to generate AI suggestions: ${errorMessage}`);
     }
 }

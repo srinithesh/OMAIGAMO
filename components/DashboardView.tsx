@@ -1,15 +1,16 @@
-
-
 import React, { useState, useMemo, useEffect } from 'react';
-import { ResponsiveContainer, RadialBarChart, RadialBar, PolarAngleAxis, Cell } from 'recharts';
+import { ResponsiveContainer, RadialBarChart, RadialBar, PolarAngleAxis, Cell, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
 import { ProcessedVehicleData, ReportSections } from '../types';
-import { CheckCircleIcon, WarningIcon, XCircleIcon, SparklesIcon, ProcessingIcon, ChevronDownIcon, CogIcon, SearchIcon, CarIcon, MotorcycleIcon, TruckIcon, QuestionMarkIcon, MoneyIcon } from './Icons';
+import { CheckCircleIcon, WarningIcon, XCircleIcon, SparklesIcon, ProcessingIcon, ChevronDownIcon, CogIcon, SearchIcon, CarIcon, MotorcycleIcon, TruckIcon, QuestionMarkIcon, MoneyIcon, RefreshIcon, ChartBarIcon } from './Icons';
 import { getComplianceSummary, getOverallSuggestions } from '../services/geminiService';
+import AiFleetRecommendations from './AiFleetRecommendations';
 
 interface DashboardViewProps {
   data: ProcessedVehicleData[];
   onGenerateReport: (data: ProcessedVehicleData[], sections: ReportSections, summaries: Record<string, string>) => void;
   onReset: () => void;
+  onRefreshData: () => void;
+  isRefreshing: boolean;
 }
 
 const getStatusIcon = (status: string) => {
@@ -106,7 +107,7 @@ const VehicleTypeIcon: React.FC<{ type: ProcessedVehicleData['vehicleType'] }> =
 };
 
 
-export const DashboardView: React.FC<DashboardViewProps> = ({ data, onGenerateReport, onReset }) => {
+export const DashboardView: React.FC<DashboardViewProps> = ({ data, onGenerateReport, onReset, onRefreshData, isRefreshing }) => {
     const [summaries, setSummaries] = useState<Record<string, string>>({});
     const [loadingSummary, setLoadingSummary] = useState<string | null>(null);
     const [expandedRow, setExpandedRow] = useState<string | null>(null);
@@ -125,15 +126,55 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ data, onGenerateRe
         includeDetailedInsights: false,
     });
     const [showReportOptions, setShowReportOptions] = useState(false);
+    const [showReportConfirmationDialog, setShowReportConfirmationDialog] = useState(false);
     const [dateRange, setDateRange] = useState({ start: '', end: '' });
     const [reviewedDiscrepancies, setReviewedDiscrepancies] = useState<Set<string>>(new Set());
     const [searchQuery, setSearchQuery] = useState('');
+    const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
     const [sortConfig, setSortConfig] = useState<{ key: SortableKeys; direction: 'ascending' | 'descending' }>({ key: 'timestamp', direction: 'descending' });
     const [collectedBalances, setCollectedBalances] = useState<Set<string>>(new Set());
+    const [expandedViolation, setExpandedViolation] = useState<string | null>(null);
+    const [historyModalPlate, setHistoryModalPlate] = useState<string | null>(null);
+
+    const vehicleHistory = useMemo(() => {
+        if (!historyModalPlate) return null;
+        return data
+            .filter(d => d.plate === historyModalPlate)
+            .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+    }, [historyModalPlate, data]);
 
     const overallScore = data.reduce((acc, v) => acc + v.compliance.score, 0) / (data.length || 1);
     const discrepancyData = data.filter(v => v.fueling.discrepancyFlag !== 'OK');
-    const violations = data.flatMap(v => v.compliance.overallStatus);
+
+    const violationSummary = useMemo(() => {
+        const summary: Record<string, { count: number; plates: Set<string> }> = {};
+    
+        data.forEach(vehicle => {
+            vehicle.compliance.overallStatus.forEach(status => {
+                const violationType = status.split(' for ')[0].split(' on ')[0];
+                
+                if (!summary[violationType]) {
+                    summary[violationType] = { count: 0, plates: new Set() };
+                }
+                summary[violationType].count++;
+                summary[violationType].plates.add(vehicle.plate);
+            });
+        });
+    
+        return Object.entries(summary)
+            .map(([type, data]) => ({ type, ...data }))
+            .sort((a, b) => b.count - a.count);
+    }, [data]);
+
+    useEffect(() => {
+        const handler = setTimeout(() => {
+            setDebouncedSearchQuery(searchQuery);
+        }, 300); // 300ms delay for debouncing
+
+        return () => {
+            clearTimeout(handler);
+        };
+    }, [searchQuery]);
 
     const reviewedDiscrepancyCount = useMemo(() => {
         return discrepancyData.filter(v => reviewedDiscrepancies.has(v.plate)).length;
@@ -168,43 +209,43 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ data, onGenerateRe
     const vehicleTypes = useMemo(() => ['all', ...Array.from(new Set(data.map(v => v.vehicleType)))], [data]);
 
     const filteredData = useMemo(() => {
-        let processedData = data.filter(v => {
-            // Search filter
-            if (searchQuery && !v.plate.toLowerCase().includes(searchQuery.toLowerCase())) return false;
-
-            // Standard filters
+        // Prepare date range filters once to avoid reparsing in the loop
+        const startDate = dateRange.start ? new Date(dateRange.start) : null;
+        if (startDate) startDate.setHours(0, 0, 0, 0);
+        const endDate = dateRange.end ? new Date(dateRange.end) : null;
+        if (endDate) endDate.setHours(23, 59, 59, 999);
+    
+        const processedData = data.filter(v => {
+            // Apply cheaper filters first to reduce the dataset for more expensive checks.
+    
+            // Search filter (debounced)
+            const searchLower = debouncedSearchQuery.toLowerCase();
+            if (searchLower && !v.plate.toLowerCase().includes(searchLower)) {
+                return false;
+            }
+    
+            // Compliance status filter
             if (filters.compliance === 'violations' && v.compliance.overallStatus.length === 0) return false;
             if (filters.compliance === 'compliant' && v.compliance.overallStatus.length > 0) return false;
+    
+            // Vehicle type filter
             if (filters.vehicleType !== 'all' && v.vehicleType !== filters.vehicleType) return false;
+    
+            // Fueling discrepancy filter
             if (filters.fueling !== 'all' && v.fueling.discrepancyFlag !== filters.fueling) return false;
-
+    
             // Date range filter
-            if (dateRange.start || dateRange.end) {
-                try {
-                    const vehicleDate = new Date(v.timestamp);
-                    if (isNaN(vehicleDate.getTime())) return false; // Invalid date in data
-
-                    if (dateRange.start) {
-                        const startDate = new Date(dateRange.start);
-                        startDate.setHours(0, 0, 0, 0);
-                        if (vehicleDate < startDate) return false;
-                    }
-                    
-                    if (dateRange.end) {
-                        const endDate = new Date(dateRange.end);
-                        endDate.setHours(23, 59, 59, 999);
-                        if (vehicleDate > endDate) return false;
-                    }
-                } catch (e) {
-                    console.error("Error parsing date for filtering:", v.timestamp);
-                    return false;
-                }
+            if (startDate || endDate) {
+                const vehicleDate = new Date(v.timestamp);
+                if (isNaN(vehicleDate.getTime())) return false; // Exclude items with invalid dates
+                if (startDate && vehicleDate < startDate) return false;
+                if (endDate && vehicleDate > endDate) return false;
             }
-
+    
             return true;
         });
-
-        // Apply sorting
+    
+        // Apply sorting (sorts in-place, but on a new array from .filter())
         if (sortConfig !== null) {
             processedData.sort((a, b) => {
                 const { key, direction } = sortConfig;
@@ -230,7 +271,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ data, onGenerateRe
                     default:
                         return 0;
                 }
-
+    
                 if (aVal < bVal) {
                     return direction === 'ascending' ? -1 : 1;
                 }
@@ -240,9 +281,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ data, onGenerateRe
                 return 0;
             });
         }
-
+    
         return processedData;
-    }, [data, filters, dateRange, searchQuery, sortConfig]);
+    }, [data, filters, dateRange, debouncedSearchQuery, sortConfig]);
 
     const isDateFilterActive = dateRange.start || dateRange.end;
 
@@ -278,7 +319,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ data, onGenerateRe
             setSummaries(prev => ({ ...prev, [vehicleData.plate]: summary }));
         } catch (error) {
             console.error("Failed to get AI summary:", error);
-            setSummaries(prev => ({ ...prev, [vehicleData.plate]: "Error generating summary." }));
+            const message = error instanceof Error ? error.message : "An unknown error occurred.";
+            setSummaries(prev => ({ ...prev, [vehicleData.plate]: message }));
         } finally {
             setLoadingSummary(null);
         }
@@ -293,7 +335,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ data, onGenerateRe
             setAiSuggestions(suggestions);
         } catch (error) {
             console.error("Failed to get AI suggestions:", error);
-            setSuggestionsError("Failed to generate AI suggestions. Please try again.");
+            const message = error instanceof Error ? error.message : "An unknown error occurred.";
+            setSuggestionsError(message);
         } finally {
             setIsGeneratingSuggestions(false);
         }
@@ -349,15 +392,22 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ data, onGenerateRe
         setDateRange(prev => ({ ...prev, [name]: value }));
     };
 
-    const handleReportGeneration = () => {
+    const handleGenerateReportClick = () => {
+        setShowReportConfirmationDialog(true);
+    };
+
+    const handleConfirmAndGenerate = () => {
         const dataToReport = selectedRows.size > 0
             ? data.filter(v => selectedRows.has(v.plate))
+            // eslint-disable-next-line indent
             : filteredData;
         
         if (dataToReport.length > 0) {
             onGenerateReport(dataToReport, reportOptions, summaries);
         }
+        setShowReportConfirmationDialog(false);
     };
+
 
     const handleMarkAllReviewed = () => {
         const platesToReview = discrepancyData.map(v => v.plate);
@@ -370,6 +420,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ data, onGenerateRe
 
     const reportButtonText = selectedRows.size > 0
         ? `Generate Report for ${selectedRows.size} Vehicle(s)`
+        // eslint-disable-next-line indent
         : 'Generate Filtered Report';
     
     const isReportButtonDisabled = (selectedRows.size === 0 && filteredData.length === 0) || 
@@ -389,7 +440,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ data, onGenerateRe
                             <p><span className="font-semibold text-stone w-28 inline-block">PUC:</span> {vehicle.compliance.pucStatus} (til {formatDate(vehicle.rto.pollutionValidTill)})</p>
                             <p><span className="font-semibold text-stone w-28 inline-block">Insurance:</span> {vehicle.compliance.insuranceStatus}</p>
                             <p><span className="font-semibold text-stone w-28 inline-block">Road Tax:</span> {vehicle.compliance.taxStatus}</p>
-                            <p><span className="font-semibold text-stone w-28 inline-block">Pending Fine:</span> {vehicle.rto.pendingFine > 0 ? `₹${vehicle.rto.pendingFine} (${vehicle.rto.fineReason})` : 'None'}</p>
+                            <p className="flex items-start">
+                                <span className="font-semibold text-stone w-28 inline-block flex-shrink-0">Pending Fine:</span>
+                                {vehicle.rto.pendingFine > 0 ? (
+                                    <span className="flex-grow">
+                                        {`₹${vehicle.rto.pendingFine} (${vehicle.rto.fineReason})`}
+                                    </span>
+                                ) : <span className="flex-grow">None</span>}
+                            </p>
                         </div>
                     </div>
 
@@ -433,14 +491,28 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ data, onGenerateRe
 
     return (
     <div className="p-4 md:p-8 min-h-screen animate-fade-in">
-        <header className="flex justify-between items-center mb-6">
+        <header className="flex flex-wrap gap-4 justify-between items-center mb-6">
             <h1 className="text-3xl font-bold text-caribbean-green tracking-wider">COMPLIANCE ANALYSIS</h1>
-            <button 
-                onClick={onReset} 
-                className="border border-stone text-stone px-4 py-2 rounded-md hover:border-caribbean-green hover:text-caribbean-green hover:shadow-glow-green transition-all duration-300"
-            >
-                New Analysis
-            </button>
+            <div className="flex items-center gap-4">
+                <button
+                    onClick={onRefreshData}
+                    disabled={isRefreshing}
+                    className="flex items-center gap-2 border border-stone text-stone px-4 py-2 rounded-md hover:border-caribbean-green hover:text-caribbean-green hover:shadow-glow-green transition-all duration-300 disabled:opacity-50 disabled:cursor-wait"
+                >
+                    {isRefreshing ? (
+                        <ProcessingIcon className="w-5 h-5 animate-spin" />
+                    ) : (
+                        <RefreshIcon className="w-5 h-5" />
+                    )}
+                    {isRefreshing ? 'Fetching...' : 'Fetch Latest Data'}
+                </button>
+                <button 
+                    onClick={onReset} 
+                    className="border border-stone text-stone px-4 py-2 rounded-md hover:border-caribbean-green hover:text-caribbean-green hover:shadow-glow-green transition-all duration-300"
+                >
+                    New Analysis
+                </button>
+            </div>
         </header>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 xl:grid-cols-4 gap-6">
@@ -448,7 +520,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ data, onGenerateRe
             <div className="lg:col-span-2 xl:col-span-3 space-y-6">
                  {/* Unified Compliance Table */}
                  <div className="bg-basil/30 backdrop-blur-sm rounded-lg p-4 border border-bangladesh-green animate-slide-in-up">
-                    <h2 className="text-xl font-semibold text-anti-flash-white mb-4">Unified Compliance Table</h2>
+                    <div className="flex flex-wrap gap-2 justify-between items-center mb-4">
+                        <h2 className="text-xl font-semibold text-anti-flash-white">Unified Compliance Table</h2>
+                        <div className="text-sm font-semibold text-stone bg-pine/50 px-3 py-1 rounded-md border border-bangladesh-green/50">
+                            {`Displaying ${filteredData.length} of ${data.length} vehicles`}
+                        </div>
+                    </div>
 
                     {/* FILTERS */}
                     <div className="flex flex-col md:flex-row flex-wrap items-center justify-between gap-4 mb-4 pb-4 border-b border-bangladesh-green/50">
@@ -587,12 +664,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ data, onGenerateRe
                                         }
                                         return <th key={h} className="p-3">{h}</th>;
                                     })}
+                                    <th className="p-3 text-center">History</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {filteredData.length > 0 ? (
                                     filteredData.map((v) => (
-                                        <React.Fragment key={v.plate}>
+                                        <React.Fragment key={`${v.plate}-${v.timestamp}`}>
                                             <tr 
                                                 className="border-b border-bangladesh-green/50 hover:bg-forest transition-colors group"
                                             >
@@ -608,9 +686,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ data, onGenerateRe
                                                 </td>
                                                 <td 
                                                     className="p-3 text-center cursor-pointer"
-                                                    onClick={() => setExpandedRow(expandedRow === v.plate ? null : v.plate)}
+                                                    onClick={() => setExpandedRow(expandedRow === `${v.plate}-${v.timestamp}` ? null : `${v.plate}-${v.timestamp}`)}
                                                 >
-                                                    <ChevronDownIcon className={`w-5 h-5 text-stone transition-transform transform group-hover:text-anti-flash-white ${expandedRow === v.plate ? 'rotate-180' : ''}`} />
+                                                    <ChevronDownIcon className={`w-5 h-5 text-stone transition-transform transform group-hover:text-anti-flash-white ${expandedRow === `${v.plate}-${v.timestamp}` ? 'rotate-180' : ''}`} />
                                                 </td>
                                                 <td className="p-3 font-mono">{v.plate}</td>
                                                 <td className="p-3 text-stone">{formatDate(v.timestamp)}</td>
@@ -628,10 +706,20 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ data, onGenerateRe
                                                         : getStatusIcon(v.fueling.discrepancyFlag)}
                                                 </td>
                                                 <td className="p-3 text-frog">{v.compliance.overallStatus.length > 0 ? v.compliance.overallStatus[0].split(' on ')[0] : <span className="text-caribbean-green">OK</span>}</td>
+                                                <td className="p-3 text-center">
+                                                    <button
+                                                        onClick={() => setHistoryModalPlate(v.plate)}
+                                                        className="p-1 rounded-full hover:bg-forest transition-colors"
+                                                        aria-label={`View history for ${v.plate}`}
+                                                        title={`View history for ${v.plate}`}
+                                                    >
+                                                        <ChartBarIcon className="w-6 h-6 text-stone group-hover:text-caribbean-green" />
+                                                    </button>
+                                                </td>
                                             </tr>
-                                            {expandedRow === v.plate && (
+                                            {expandedRow === `${v.plate}-${v.timestamp}` && (
                                                 <tr className="bg-pine/30">
-                                                    <td colSpan={12} className="p-0">
+                                                    <td colSpan={13} className="p-0">
                                                         <DetailRow vehicle={v} />
                                                     </td>
                                                 </tr>
@@ -640,7 +728,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ data, onGenerateRe
                                     ))
                                 ) : (
                                     <tr>
-                                        <td colSpan={12} className="text-center p-8 text-stone">
+                                        <td colSpan={13} className="text-center p-8 text-stone">
                                             {isDateFilterActive
                                                 ? "No vehicles found for the selected date range and filters."
                                                 : "No vehicles match the current filters."
@@ -773,15 +861,41 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ data, onGenerateRe
                 </div>
                 <div className="bg-basil/30 backdrop-blur-sm rounded-lg p-6 border border-bangladesh-green animate-slide-in-up" style={{ animationDelay: '300ms'}}>
                     <h2 className="text-xl font-semibold text-anti-flash-white mb-4">Violations Summary</h2>
-                    {violations.length > 0 ? (
-                        <ul className="space-y-2 max-h-60 overflow-y-auto">
-                            {violations.map((violation, i) => (
-                                <li key={i} className="flex items-start gap-2 text-frog">
-                                    <WarningIcon className="w-5 h-5 mt-1 flex-shrink-0" />
-                                    <span>{violation}</span>
-                                </li>
+                    {violationSummary.length > 0 ? (
+                        <div className="space-y-2 max-h-[22rem] overflow-y-auto pr-2">
+                            {violationSummary.map(({ type, count, plates }) => (
+                                <div key={type} className="bg-pine/50 rounded-lg transition-all duration-300">
+                                    <div 
+                                        className="flex justify-between items-center cursor-pointer p-3"
+                                        onClick={() => setExpandedViolation(expandedViolation === type ? null : type)}
+                                        aria-expanded={expandedViolation === type}
+                                        aria-controls={`violation-details-${type.replace(/\s+/g, '-')}`}
+                                    >
+                                        <div className="flex items-center gap-3">
+                                            <WarningIcon className="w-5 h-5 text-yellow-400 flex-shrink-0" />
+                                            <span className="font-semibold text-anti-flash-white">{type}</span>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <span className="bg-caribbean-green text-rich-black text-xs font-bold px-2 py-0.5 rounded-full">{count}</span>
+                                            <ChevronDownIcon className={`w-5 h-5 text-stone transition-transform ${expandedViolation === type ? 'rotate-180' : ''}`} />
+                                        </div>
+                                    </div>
+                                    {expandedViolation === type && (
+                                        <div 
+                                            id={`violation-details-${type.replace(/\s+/g, '-')}`}
+                                            className="pt-0 p-3 pl-11 text-sm text-stone animate-fade-in"
+                                        >
+                                            <p className="font-semibold mb-1 text-anti-flash-white/80 border-b border-bangladesh-green/50 pb-1">Affected Vehicles:</p>
+                                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1 font-mono pt-2">
+                                                {Array.from(plates).map(plate => (
+                                                    <span key={plate}>{plate}</span>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
                             ))}
-                        </ul>
+                        </div>
                     ) : (
                         <div className="text-center py-4">
                             <CheckCircleIcon className="w-12 h-12 text-caribbean-green mx-auto mb-2" />
@@ -809,11 +923,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ data, onGenerateRe
                         </div>
                     ) : aiSuggestions !== null ? (
                         <>
-                            <div className="text-sm text-anti-flash-white/90 whitespace-pre-wrap font-mono max-h-80 overflow-y-auto mb-4">{aiSuggestions || "No specific suggestions provided."}</div>
+                            <AiFleetRecommendations suggestions={aiSuggestions} />
                              <button
                                 onClick={handleGenerateSuggestions}
                                 disabled={isGeneratingSuggestions}
-                                className="w-full flex items-center justify-center gap-2 px-4 py-2 text-md font-semibold rounded-md bg-caribbean-green/20 text-caribbean-green hover:bg-caribbean-green/40 disabled:opacity-50 transition-all"
+                                className="w-full flex items-center justify-center gap-2 px-4 py-2 text-md font-semibold rounded-md bg-caribbean-green/20 text-caribbean-green hover:bg-caribbean-green/40 disabled:opacity-50 transition-all mt-4"
                             >
                                 <SparklesIcon className="w-5 h-5" />
                                 Regenerate Suggestions
@@ -836,7 +950,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ data, onGenerateRe
                 <div className="space-y-3">
                     <div className="flex gap-3">
                         <button 
-                            onClick={handleReportGeneration} 
+                            onClick={handleGenerateReportClick} 
                             disabled={isReportButtonDisabled}
                             className="flex-grow text-lg font-bold bg-caribbean-green text-rich-black px-4 py-3 rounded-md hover:bg-mountain-meadow hover:shadow-glow-green-lg transition-all duration-300 disabled:bg-stone disabled:cursor-not-allowed"
                         >
@@ -891,6 +1005,111 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ data, onGenerateRe
                 </div>
             </div>
         </div>
+
+        {showReportConfirmationDialog && (
+            <div className="fixed inset-0 bg-rich-black/80 backdrop-blur-sm flex items-center justify-center z-50 animate-fade-in">
+                <div className="bg-basil/90 border border-bangladesh-green rounded-lg shadow-glow-green-lg p-6 w-full max-w-lg m-4 animate-slide-in-up">
+                    <h3 className="text-2xl font-bold text-caribbean-green mb-4">Confirm Report Generation</h3>
+                    <div className="text-anti-flash-white/90 space-y-3 mb-6">
+                        <p>You are about to generate a report with the following parameters:</p>
+                        <div className="bg-pine/50 p-4 rounded-md border border-bangladesh-green/50">
+                            <ul className="list-disc list-inside space-y-2">
+                                <li>
+                                    <strong>Vehicles to Include:</strong> {selectedRows.size > 0 ? `${selectedRows.size} selected vehicle(s)` : `${filteredData.length} filtered vehicle(s)`}
+                                </li>
+                                <li>
+                                    <strong>Report Sections:</strong>
+                                    <ul className="list-disc list-inside pl-6 mt-1">
+                                        {reportOptions.includeComplianceDetails && <li>Compliance Details Table</li>}
+                                        {reportOptions.includeFuelingDiscrepancies && <li>Fueling Discrepancy Analysis</li>}
+                                        {reportOptions.includeDetailedInsights && <li>Detailed Vehicle Insights (AI & RTO)</li>}
+                                        {!reportOptions.includeComplianceDetails && !reportOptions.includeFuelingDiscrepancies && !reportOptions.includeDetailedInsights && <li className="text-stone">No sections selected</li>}
+                                    </ul>
+                                </li>
+                            </ul>
+                        </div>
+                        <p>Do you want to proceed?</p>
+                    </div>
+                    <div className="flex justify-end gap-4">
+                        <button
+                            onClick={() => setShowReportConfirmationDialog(false)}
+                            className="px-6 py-2 rounded-md bg-stone/20 text-stone hover:bg-stone/40 transition-colors"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            onClick={handleConfirmAndGenerate}
+                            className="px-6 py-2 rounded-md bg-caribbean-green text-rich-black font-bold hover:bg-mountain-meadow hover:shadow-glow-green transition-all"
+                        >
+                            Confirm & Generate
+                        </button>
+                    </div>
+                </div>
+            </div>
+        )}
+
+        {vehicleHistory && historyModalPlate && (
+             <div className="fixed inset-0 bg-rich-black/80 backdrop-blur-sm flex items-center justify-center z-50 animate-fade-in">
+                <div className="bg-basil/95 border border-bangladesh-green rounded-lg shadow-glow-green-lg p-6 w-full max-w-4xl m-4 animate-slide-in-up flex flex-col max-h-[90vh]">
+                    <div className="flex justify-between items-center mb-4">
+                        <h3 className="text-2xl font-bold text-caribbean-green">Compliance History for <span className="font-mono">{historyModalPlate}</span></h3>
+                        <button onClick={() => setHistoryModalPlate(null)} className="text-stone hover:text-anti-flash-white">
+                            <XCircleIcon className="w-8 h-8"/>
+                        </button>
+                    </div>
+                    
+                    {/* Trend Graph */}
+                    <div className="w-full h-72 mb-6">
+                        <ResponsiveContainer width="100%" height="100%">
+                            <LineChart
+                                data={vehicleHistory}
+                                margin={{ top: 5, right: 30, left: 0, bottom: 5 }}
+                            >
+                                <CartesianGrid strokeDasharray="3 3" stroke="#09624C" />
+                                <XAxis dataKey="timestamp" tickFormatter={(ts) => formatDate(ts)} stroke="#707D7D" />
+                                <YAxis domain={[0, 100]} stroke="#707D7D"/>
+                                <Tooltip
+                                    contentStyle={{
+                                        backgroundColor: 'rgba(13, 15, 17, 0.9)',
+                                        borderColor: '#09624C',
+                                        color: '#F1F7F5'
+                                    }}
+                                    labelFormatter={(label) => formatDate(label)}
+                                />
+                                <Legend />
+                                <Line type="monotone" dataKey="compliance.score" name="Compliance Score" stroke="#00DF81" strokeWidth={2} dot={{ r: 4 }} activeDot={{ r: 8 }} />
+                            </LineChart>
+                        </ResponsiveContainer>
+                    </div>
+                    
+                    {/* Violation Log */}
+                    <div className="flex-grow overflow-y-auto pr-2">
+                        <h4 className="text-xl font-semibold text-anti-flash-white mb-3">Transaction Log</h4>
+                        <div className="space-y-4">
+                            {vehicleHistory.map((entry) => (
+                                <div key={entry.timestamp} className="bg-pine/50 p-3 rounded-md border-l-4 border-bangladesh-green">
+                                    <div className="flex justify-between items-center mb-2">
+                                        <p className="font-semibold text-stone">{formatDate(entry.timestamp)}</p>
+                                        <p className="font-bold text-lg" style={{ color: entry.compliance.score > 80 ? '#00DF81' : entry.compliance.score > 50 ? '#20C295' : '#D9534F' }}>
+                                            Score: {entry.compliance.score}
+                                        </p>
+                                    </div>
+                                    {entry.compliance.overallStatus.length > 0 ? (
+                                        <ul className="list-disc list-inside text-sm text-anti-flash-white/80 space-y-1">
+                                            {entry.compliance.overallStatus.map((status, index) => (
+                                                <li key={index}>{status.replace(` on ${entry.plate}`, '').replace(` for ${entry.plate}`, '')}</li>
+                                            ))}
+                                        </ul>
+                                    ) : (
+                                        <p className="text-sm text-caribbean-green">No violations recorded for this transaction.</p>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        )}
     </div>
     );
 };

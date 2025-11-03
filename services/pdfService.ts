@@ -70,6 +70,53 @@ export const generateReport = (data: ProcessedVehicleData[], sections: ReportSec
     currentY = (doc as any).lastAutoTable.finalY + 15;
   }
 
+  // Micro Balance Recovery section
+  const balances: Record<string, { total: number; count: number; lastSeen: string }> = {};
+  data.forEach(v => {
+      if (v.fueling.microBalance > 0.001) { // Ignore tiny floating point errors
+          if (!balances[v.plate]) {
+              balances[v.plate] = { total: 0, count: 0, lastSeen: '1970-01-01T00:00:00.000Z' };
+          }
+          balances[v.plate].total += v.fueling.microBalance;
+          balances[v.plate].count += 1;
+          if (new Date(v.timestamp) > new Date(balances[v.plate].lastSeen)) {
+              balances[v.plate].lastSeen = v.timestamp;
+          }
+      }
+  });
+
+  const aggregatedBalances = Object.entries(balances)
+      .map(([plate, info]) => ({ plate, ...info }))
+      .filter(item => item.total > 0.01)
+      .sort((a, b) => b.total - a.total);
+
+  if (aggregatedBalances.length > 0) {
+      if (currentY > 240) { // Check for page break
+          doc.addPage();
+          currentY = 20;
+      }
+      doc.setFontSize(16);
+      doc.setFont('helvetica', 'bold');
+      doc.text("Micro Balance Recovery", 14, currentY);
+      autoTable(doc, {
+          startY: currentY + 5,
+          head: [['Plate', 'Pending Amount (₹)', '# Transactions', 'Last Seen']],
+          body: aggregatedBalances.map(item => [
+              item.plate,
+              `₹${item.total.toFixed(2)}`,
+              item.count.toString(),
+              new Date(item.lastSeen).toLocaleDateString('en-GB', {
+                  day: '2-digit',
+                  month: 'short',
+                  year: 'numeric'
+              })
+          ]),
+          theme: 'grid',
+          headStyles: { fillColor: [9, 98, 76] },
+      });
+      currentY = (doc as any).lastAutoTable.finalY + 15;
+  }
+
   // Detailed Vehicle Insights Section
   if (sections.includeDetailedInsights && data.length > 0) {
     // Start on a new page if there isn't much space left
@@ -86,7 +133,7 @@ export const generateReport = (data: ProcessedVehicleData[], sections: ReportSec
     currentY += 10;
 
     data.forEach(v => {
-        const detailHeight = 50 + (summaries[v.plate] ? (doc.splitTextToSize(summaries[v.plate], 180).length * 4) : 0);
+        const detailHeight = 55 + (summaries[v.plate] ? (doc.splitTextToSize(summaries[v.plate], 180).length * 4) : 0);
         if (currentY + detailHeight > 280) { // Check for page break before each vehicle
             doc.addPage();
             currentY = 20;
@@ -106,6 +153,7 @@ export const generateReport = (data: ProcessedVehicleData[], sections: ReportSec
                 ['Insurance', v.compliance.insuranceStatus],
                 ['Road Tax', v.compliance.taxStatus],
                 ['Pending Fine', v.rto.pendingFine > 0 ? `₹${v.rto.pendingFine} (${v.rto.fineReason})` : 'None'],
+                ['Micro Balance (this tx)', v.fueling.microBalance > 0.01 ? `₹${v.fueling.microBalance.toFixed(2)}` : 'None'],
             ],
             theme: 'plain',
             styles: { fontSize: 9, cellPadding: 1 },

@@ -106,6 +106,7 @@ const LoadingOverlay: React.FC = () => (
 
 function App() {
     const [isLoading, setIsLoading] = useState(false);
+    const [isRefreshing, setIsRefreshing] = useState(false);
     const [analysisResult, setAnalysisResult] = useState<ProcessedVehicleData[] | null>(null);
     const [parsingError, setParsingError] = useState<string | null>(null);
 
@@ -128,6 +129,60 @@ function App() {
         }, 2000);
     }, []);
 
+    const handleRefreshData = useCallback(() => {
+        if (!analysisResult) return;
+        setIsRefreshing(true);
+    
+        setTimeout(() => {
+            // Create a deep copy to avoid direct state mutation
+            const newData = JSON.parse(JSON.stringify(analysisResult)) as ProcessedVehicleData[];
+            
+            // Simulation Logic: Find a vehicle to "fix" or "break"
+            let vehicleToUpdate = newData.find(v => v.compliance.score < 100);
+            
+            if (vehicleToUpdate) {
+                // "Fix" the found non-compliant vehicle
+                vehicleToUpdate.rto.insuranceStatus = 'Active';
+                vehicleToUpdate.rto.pendingFine = 0;
+                vehicleToUpdate.rto.fineReason = "None";
+            } else {
+                // If all are compliant, "break" the first one
+                vehicleToUpdate = newData[0];
+                if (vehicleToUpdate) {
+                    vehicleToUpdate.rto.insuranceStatus = 'Expired';
+                    vehicleToUpdate.rto.pendingFine = 750;
+                    vehicleToUpdate.rto.fineReason = "New Violation";
+                }
+            }
+            
+            // Recalculate compliance for the updated vehicle
+            if (vehicleToUpdate) {
+                let score = 100;
+                const overallStatus: string[] = [];
+                const v = vehicleToUpdate;
+    
+                const isRegValid = new Date(v.rto.registrationValidTill || 0) > new Date();
+                const isPucValid = new Date(v.rto.pollutionValidTill || 0) > new Date();
+                
+                if (!isRegValid) { score -= 20; overallStatus.push(`Reg Expired for ${v.plate}`); }
+                if (v.rto.insuranceStatus !== 'Active') { score -= 20; overallStatus.push(`Insurance Expired for ${v.plate}`); }
+                if (!isPucValid) { score -= 20; overallStatus.push(`PUC Expired for ${v.plate}`); }
+                if (v.rto.pendingFine > 0) { score -= 20; overallStatus.push(`Fine Pending: ₹${v.rto.pendingFine} on ${v.plate}`); }
+                if (v.rto.roadTaxStatus !== 'Paid') { score -= 20; overallStatus.push(`Tax Due for ${v.plate}`); }
+                if (v.fueling.discrepancyFlag !== 'OK') { score -= 20; overallStatus.push(`Fueling Discrepancy on ${v.plate}`); }
+                if (v.vehicleType === '2-Wheeler' && v.helmet === false) { overallStatus.push(`No Helmet on ${v.plate}`); }
+    
+                v.compliance.score = Math.max(0, score);
+                v.compliance.overallStatus = overallStatus;
+                v.compliance.insuranceStatus = v.rto.insuranceStatus;
+                v.timestamp = new Date().toISOString(); // Update timestamp to show it's fresh data
+            }
+    
+            setAnalysisResult(newData);
+            setIsRefreshing(false);
+        }, 1500); // Simulate network delay
+    }, [analysisResult]);
+
     const handleGenerateReport = useCallback((dataToReport: ProcessedVehicleData[], sections: ReportSections, summaries: Record<string, string>) => {
         if (dataToReport && dataToReport.length > 0) {
             generateReport(dataToReport, sections, summaries);
@@ -147,7 +202,13 @@ function App() {
         <div className="min-h-screen">
             {isLoading && <LoadingOverlay />}
             {analysisResult ? (
-                <DashboardView data={analysisResult} onGenerateReport={handleGenerateReport} onReset={handleReset} />
+                <DashboardView 
+                    data={analysisResult} 
+                    onGenerateReport={handleGenerateReport} 
+                    onReset={handleReset}
+                    onRefreshData={handleRefreshData}
+                    isRefreshing={isRefreshing}
+                />
             ) : (
                 <UploadView 
                     onAnalyze={handleAnalyze} 
