@@ -1,0 +1,9 @@
+
+{
+  "name": "veridian-fleet-backend-deprecated",
+  "version": "1.0.0",
+  "description": "DEPRECATED: This backend is no longer in use. The application now uses an in-browser Web Worker for analysis.",
+  "main": "server.js",
+  "author": "",
+  "license": "ISC"
+}
