@@ -57,3 +57,9 @@ export interface ReportSections {
   includeFuelingDiscrepancies: boolean;
   includeDetailedInsights: boolean;
 }
+
+export interface AnalysisStep {
+  title: string;
+  status: 'pending' | 'in-progress' | 'complete';
+  progress?: number;
+}
