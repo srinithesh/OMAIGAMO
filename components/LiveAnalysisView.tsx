@@ -1,56 +1,15 @@
+
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { AiDetection, ProcessedVehicleData, RtoData, Transaction } from '../types';
 import { mockAiDetections, mockRtoDatabase } from '../services/mockData';
 import { PlayIcon, StopIcon, XCircleIcon, CheckCircleIcon } from './Icons';
 import { Header } from './Header';
+import { processLiveData } from '../services/dataProcessingService';
 
 interface LiveAnalysisViewProps {
   onSessionEnd: (results: ProcessedVehicleData[]) => void;
   onReset: () => void;
 }
-
-const processSingleVehicle = (tx: Transaction, detection: AiDetection, rto: RtoData): ProcessedVehicleData => {
-    let score = 100;
-    const overallStatus: string[] = [];
-    
-    const isRegValid = new Date(rto.registrationValidTill || 0) > new Date();
-    const isPucValid = new Date(rto.pollutionValidTill || 0) > new Date();
-    
-    if (!isRegValid) { score -= 20; overallStatus.push(`Reg Expired`); }
-    if (rto.insuranceStatus !== 'Active') { score -= 20; overallStatus.push(`Insurance Expired`); }
-    if (!isPucValid) { score -= 20; overallStatus.push(`PUC Expired`); }
-    if (rto.pendingFine > 0) { score -= 20; overallStatus.push(`Fine Pending: ₹${rto.pendingFine}`); }
-    if (rto.roadTaxStatus !== 'Paid') { score -= 20; overallStatus.push(`Tax Due`); }
-    if (detection.vehicleType === '2-Wheeler' && detection.helmet === false) {
-        score -= 15;
-        overallStatus.push(`No Helmet`);
-    }
-
-    return {
-        plate: tx.plate,
-        vehicleType: detection.vehicleType || 'Other',
-        helmet: detection.helmet === undefined ? null : detection.helmet,
-        timestamp: tx.timestamp,
-        rto,
-        amount: tx.amount,
-        fueling: { // Simplified for live view
-            billed: 0,
-            detected: 0,
-            difference: 0,
-            discrepancyFlag: 'OK',
-            microBalance: 0,
-        },
-        compliance: {
-            score: Math.max(0, score),
-            fineStatus: rto.pendingFine > 0 ? `₹${rto.pendingFine}` : 'OK',
-            insuranceStatus: rto.insuranceStatus || 'Expired',
-            pucStatus: isPucValid ? 'Valid' : 'Expired',
-            taxStatus: rto.roadTaxStatus || 'Due',
-            registrationStatus: isRegValid ? 'Valid' : 'Expired',
-            overallStatus,
-        }
-    };
-};
 
 export const LiveAnalysisView: React.FC<LiveAnalysisViewProps> = ({ onSessionEnd, onReset }) => {
     const [isStreaming, setIsStreaming] = useState(false);
@@ -58,7 +17,6 @@ export const LiveAnalysisView: React.FC<LiveAnalysisViewProps> = ({ onSessionEnd
     const [error, setError] = useState<string | null>(null);
     const videoRef = useRef<HTMLVideoElement>(null);
     const streamRef = useRef<MediaStream | null>(null);
-    // FIX: Use `number` for interval ID in browser environments instead of `NodeJS.Timeout`.
     const intervalRef = useRef<number | null>(null);
     
     const cleanupCamera = useCallback(() => {
@@ -95,7 +53,7 @@ export const LiveAnalysisView: React.FC<LiveAnalysisViewProps> = ({ onSessionEnd
 
     const startSimulation = () => {
         setIsStreaming(true);
-        intervalRef.current = setInterval(() => {
+        intervalRef.current = window.setInterval(() => {
             const randomIndex = Math.floor(Math.random() * mockAiDetections.length);
             const detection = mockAiDetections[randomIndex];
             const rto = mockRtoDatabase[detection.plate];
@@ -108,8 +66,8 @@ export const LiveAnalysisView: React.FC<LiveAnalysisViewProps> = ({ onSessionEnd
                     billedLiters: 0,
                     stationId: 'LIVE-01'
                 };
-                const processed = processSingleVehicle(transaction, detection, rto);
-                setDetectedVehicles(prev => [processed, ...prev]);
+                const processed = processLiveData(transaction, detection, rto);
+                setDetectedVehicles(prev => [processed, ...prev].slice(0, 50)); // Keep the list from getting too long
             }
         }, 3000); // New detection every 3 seconds
     };
@@ -118,6 +76,7 @@ export const LiveAnalysisView: React.FC<LiveAnalysisViewProps> = ({ onSessionEnd
         setIsStreaming(false);
         if (intervalRef.current) {
             clearInterval(intervalRef.current);
+            intervalRef.current = null;
         }
     };
 
@@ -199,7 +158,7 @@ export const LiveAnalysisView: React.FC<LiveAnalysisViewProps> = ({ onSessionEnd
                                             v.compliance.overallStatus.map((status, i) => (
                                                 <div key={i} className="flex items-center gap-2 text-red-400">
                                                    <XCircleIcon className="w-4 h-4 flex-shrink-0" />
-                                                   <span>{status}</span>
+                                                   <span>{status.split(' for ')[0].split(' on ')[0]}</span>
                                                 </div>
                                             ))
                                         ) : (

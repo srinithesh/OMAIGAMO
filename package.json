@@ -1,5 +1,5 @@
 {
-  "name": "copy-2-of-copy-of-ai-vehicle-compliance-dashboard",
+  "name": "4copy-of-3copy-of-copy-of-ai-vehicle-compliance-dashboard",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -14,7 +14,8 @@
     "react-dom": "^19.2.0",
     "react": "^19.2.0",
     "jspdf-autotable": "^5.0.2",
-    "jspdf": "^3.0.3"
+    "jspdf": "^3.0.3",
+    "react-router-dom": "^6.26.0"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",

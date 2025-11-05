@@ -1,10 +1,11 @@
+
 import React, { useState, useRef } from 'react';
 import { UploadIcon, CameraIcon, BoltIcon, PlayIcon, XCircleIcon } from './Icons';
 import { getMockTransactionCsv } from '../services/mockData';
 import { Logo } from './Logo';
 
 interface UploadViewProps {
-  onAnalyze: (videoFile: File, transactionLog: string, yoloModelFile: File) => void;
+  onAnalyze: (videoFile: File, transactionFile: File) => void;
   isLoading: boolean;
   parsingError: string | null;
   onClearParsingError: () => void;
@@ -13,25 +14,16 @@ interface UploadViewProps {
 
 export const UploadView: React.FC<UploadViewProps> = ({ onAnalyze, isLoading, parsingError, onClearParsingError, onStartLive }) => {
   const [videoFile, setVideoFile] = useState<File | null>(null);
-  const [transactionLog, setTransactionLog] = useState<string>('');
-  const [yoloModelFile, setYoloModelFile] = useState<File | null>(null);
+  const [transactionFile, setTransactionFile] = useState<File | null>(null);
   const [validationError, setValidationError] = useState<string>('');
 
   const videoInputRef = useRef<HTMLInputElement>(null);
   const transactionInputRef = useRef<HTMLInputElement>(null);
-  const modelInputRef = useRef<HTMLInputElement>(null);
 
   const clearAllErrors = () => {
     setValidationError('');
     if (parsingError) {
       onClearParsingError();
-    }
-  };
-
-  const handleModelFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      setYoloModelFile(e.target.files[0]);
-      clearAllErrors();
     }
   };
 
@@ -44,12 +36,8 @@ export const UploadView: React.FC<UploadViewProps> = ({ onAnalyze, isLoading, pa
 
   const handleTransactionChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        setTransactionLog(event.target?.result as string);
-        clearAllErrors();
-      };
-      reader.readAsText(e.target.files[0]);
+      setTransactionFile(e.target.files[0]);
+      clearAllErrors();
     }
   };
   
@@ -61,18 +49,19 @@ export const UploadView: React.FC<UploadViewProps> = ({ onAnalyze, isLoading, pa
 
   const handleUseMockTransactions = () => {
     const mockCsv = getMockTransactionCsv();
-    setTransactionLog(mockCsv);
+    const mockTransactionFile = new File([mockCsv], "mock_transactions.csv", { type: "text/csv" });
+    setTransactionFile(mockTransactionFile);
     clearAllErrors();
   };
 
 
   const handleAnalyzeClick = () => {
-    if (!yoloModelFile || !videoFile || !transactionLog) {
-      setValidationError('Please provide a model file, CCTV feed, and transaction log.');
+    if (!videoFile || !transactionFile) {
+      setValidationError('Please provide both a CCTV feed and a transaction log.');
       return;
     }
     clearAllErrors();
-    onAnalyze(videoFile, transactionLog, yoloModelFile);
+    onAnalyze(videoFile, transactionFile);
   };
 
   const displayError = parsingError || validationError;
@@ -96,21 +85,9 @@ export const UploadView: React.FC<UploadViewProps> = ({ onAnalyze, isLoading, pa
             </div>
             
             <div className="w-full space-y-4">
-                {/* YOLO Model Upload */}
-               <div className="bg-rich-black/30 border-2 border-dashed border-bangladesh-green/70 rounded-md p-4 w-full text-left">
-                  <p className="font-semibold text-anti-flash-white/90">1. YOLO V9 Model</p>
-                  <p className="text-sm text-stone mb-3 truncate">{yoloModelFile ? yoloModelFile.name : 'Select a .pt or .weights model file.'}</p>
-                  <div className="flex gap-2">
-                      <button onClick={() => modelInputRef.current?.click()} className="flex-1 text-sm font-bold bg-frog text-rich-black px-4 py-2 rounded-md hover:bg-mountain-meadow transition-all">
-                          Select Model
-                      </button>
-                      <input type="file" ref={modelInputRef} onChange={handleModelFileChange} accept=".pt,.weights" className="hidden" />
-                  </div>
-               </div>
-
                {/* Video Upload */}
                <div className="bg-rich-black/30 border-2 border-dashed border-bangladesh-green/70 rounded-md p-4 w-full text-left">
-                  <p className="font-semibold text-anti-flash-white/90">2. CCTV Feed</p>
+                  <p className="font-semibold text-anti-flash-white/90">1. CCTV Feed</p>
                   <p className="text-sm text-stone mb-3 truncate">{videoFile ? videoFile.name : 'Select an .mp4 video file for analysis.'}</p>
                   <div className="flex gap-2">
                       <button onClick={() => videoInputRef.current?.click()} className="flex-1 text-sm font-bold bg-frog text-rich-black px-4 py-2 rounded-md hover:bg-mountain-meadow transition-all">
@@ -125,8 +102,8 @@ export const UploadView: React.FC<UploadViewProps> = ({ onAnalyze, isLoading, pa
 
                {/* Transaction Log Upload */}
                <div className="bg-rich-black/30 border-2 border-dashed border-bangladesh-green/70 rounded-md p-4 w-full text-left">
-                  <p className="font-semibold text-anti-flash-white/90">3. Transaction Log</p>
-                  <p className="text-sm text-stone mb-3">{transactionLog ? 'Log file loaded.' : 'Select a .csv transaction log.'}</p>
+                  <p className="font-semibold text-anti-flash-white/90">2. Transaction Log</p>
+                  <p className="text-sm text-stone mb-3 truncate">{transactionFile ? transactionFile.name : 'Select a .csv transaction log.'}</p>
                    <div className="flex gap-2">
                       <button onClick={() => transactionInputRef.current?.click()} className="flex-1 text-sm font-bold bg-frog text-rich-black px-4 py-2 rounded-md hover:bg-mountain-meadow transition-all">
                           Select Log
@@ -134,7 +111,7 @@ export const UploadView: React.FC<UploadViewProps> = ({ onAnalyze, isLoading, pa
                       <button onClick={handleUseMockTransactions} className="flex-1 text-sm font-bold bg-transparent border-2 border-frog text-frog px-4 py-2 rounded-md hover:bg-frog hover:text-rich-black transition-all">
                           Use Mock Log
                       </button>
-                      <input type="file" ref={transactionInputRef} onChange={handleTransactionChange} accept=".csv,.json" className="hidden" />
+                      <input type="file" ref={transactionInputRef} onChange={handleTransactionChange} accept=".csv" className="hidden" />
                   </div>
                </div>
             </div>
@@ -155,7 +132,7 @@ export const UploadView: React.FC<UploadViewProps> = ({ onAnalyze, isLoading, pa
                 <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
                     <button
                       onClick={handleAnalyzeClick}
-                      disabled={isLoading || !yoloModelFile || !videoFile || !transactionLog}
+                      disabled={isLoading || !videoFile || !transactionFile}
                       className="w-full text-lg font-bold bg-caribbean-green text-rich-black px-8 py-3 rounded-md hover:bg-mountain-meadow hover:shadow-glow-green-lg transition-all duration-300 disabled:bg-stone disabled:cursor-not-allowed flex items-center justify-center gap-3"
                     >
                       <UploadIcon className="w-6 h-6" />

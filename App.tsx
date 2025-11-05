@@ -1,91 +1,80 @@
+
 import React, { useState, useCallback } from 'react';
+import { Routes, Route, useNavigate } from 'react-router-dom';
 import { ProcessedVehicleData, ReportSections, AnalysisStep } from './types';
 import { UploadView } from './components/UploadView';
 import { DashboardView } from './components/DashboardView';
 import { AnalysisProgressView } from './components/AnalysisProgressView';
 import { LiveAnalysisView } from './components/LiveAnalysisView';
-import { startAnalysis } from './services/apiService';
 import { generateReport } from './services/pdfService';
+// Data processing and API services are now handled by the backend.
+// We still need a way to calculate compliance for the "Refresh" feature on the frontend.
+import { calculateCompliance } from './services/dataProcessingService';
 
-type AppMode = 'upload' | 'live' | 'loading' | 'dashboard';
 
 const initialAnalysisSteps: AnalysisStep[] = [
-    { title: 'Initializing in-browser analysis engine...', status: 'pending' },
-    { title: 'Processing transaction logs locally...', status: 'pending' },
-    { title: 'Correlating datasets & generating compliance report...', status: 'pending' },
-    { title: 'Finalizing results...', status: 'pending' },
+    { title: 'Uploading Files to Server...', status: 'pending' },
+    { title: 'Initializing AI Engine...', status: 'pending' },
+    { title: 'Processing Transaction Data...', status: 'pending' },
+    { title: 'Analyzing CCTV Detections via YOLOv9...', status: 'pending' },
+    { title: 'Fetching RTO Records...', status: 'pending' },
+    { title: 'Correlating Datasets & Finalizing Report...', status: 'pending' },
 ];
 
+
 function App() {
-    const [appMode, setAppMode] = useState<AppMode>('upload');
+    const navigate = useNavigate();
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [analysisResult, setAnalysisResult] = useState<ProcessedVehicleData[] | null>(null);
     const [parsingError, setParsingError] = useState<string | null>(null);
     const [analysisProgress, setAnalysisProgress] = useState<AnalysisStep[]>(initialAnalysisSteps);
 
-    const runAnalysis = useCallback(async (videoFile: File, transactionLog: string, yoloModelFile: File) => {
-        const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-    
-        const updateStepStatus = (index: number, status: AnalysisStep['status']) => {
-            setAnalysisProgress(prev => prev.map((step, i) => {
-                if (i < index) return { ...step, status: 'complete' };
-                if (i === index) return { ...step, status };
-                return { ...step, status: 'pending' };
-            }));
-        };
-    
+    const runAnalysis = useCallback(async (videoFile: File, transactionFile: File) => {
         try {
-            // Step 0: Initializing
-            updateStepStatus(0, 'in-progress');
-            
-            // This now represents the local processing time
-            const processedDataPromise = startAnalysis(
-                yoloModelFile,
-                videoFile,
-                transactionLog
-            );
+            const formData = new FormData();
+            formData.append('video_file', videoFile);
+            formData.append('transaction_file', transactionFile);
 
-            // Simulate progress for a better user experience
-            await wait(1000);
-            updateStepStatus(0, 'complete');
-            updateStepStatus(1, 'in-progress');
-            await wait(1500);
-            updateStepStatus(1, 'complete');
-            updateStepStatus(2, 'in-progress');
+            // In a production environment, this URL should be configured via environment variables.
+            const backendUrl = 'http://127.0.0.1:8000/api/analyze';
 
-            const processedData = await processedDataPromise; // Wait for the local worker to finish
-            
-            updateStepStatus(2, 'complete');
-            updateStepStatus(3, 'in-progress');
-            await wait(500);
-            updateStepStatus(3, 'complete');
-            
+            const response = await fetch(backendUrl, {
+                method: 'POST',
+                body: formData,
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({ detail: `Server responded with status: ${response.status}` }));
+                throw new Error(errorData.detail || `An unknown server error occurred.`);
+            }
+
+            const processedData = await response.json();
             setAnalysisResult(processedData);
-            setAppMode('dashboard');
+            navigate('/dashboard');
 
         } catch (error) {
             console.error("Failed to process data:", error);
             const errorMessage = error instanceof Error ? error.message : "An unknown error occurred during analysis.";
             setParsingError(errorMessage);
-            setAppMode('upload'); // Go back to upload screen on error
+            navigate('/'); // Go back to upload screen on error
         }
-    }, []);
+    }, [navigate]);
 
-    const handleAnalyze = useCallback((videoFile: File, transactionLog: string, yoloModelFile: File) => {
-        setAppMode('loading');
+    const handleAnalyze = useCallback((videoFile: File, transactionFile: File) => {
+        navigate('/loading');
         setParsingError(null);
         setAnalysisProgress(initialAnalysisSteps); // Reset progress
-        runAnalysis(videoFile, transactionLog, yoloModelFile);
-    }, [runAnalysis]);
+        runAnalysis(videoFile, transactionFile);
+    }, [runAnalysis, navigate]);
     
     const handleStartLive = useCallback(() => {
-        setAppMode('live');
-    }, []);
+        navigate('/live');
+    }, [navigate]);
 
     const handleSessionEnd = useCallback((results: ProcessedVehicleData[]) => {
         setAnalysisResult(results);
-        setAppMode('dashboard');
-    }, []);
+        navigate('/dashboard');
+    }, [navigate]);
 
     const handleRefreshData = useCallback(() => {
         if (!analysisResult) return;
@@ -96,25 +85,27 @@ function App() {
             let vehicleToUpdate = newData.find(v => v.compliance.score < 100);
             
             if (vehicleToUpdate) {
+                // Example: Simulate a compliance issue being resolved
                 vehicleToUpdate.rto.insuranceStatus = 'Active';
                 vehicleToUpdate.rto.pendingFine = 0;
             } else if (newData.length > 0) {
+                // Example: Simulate a new compliance issue appearing
                 vehicleToUpdate = newData[0];
                 vehicleToUpdate.rto.insuranceStatus = 'Expired';
                 vehicleToUpdate.rto.pendingFine = 750;
             }
             
             if (vehicleToUpdate) {
-                // Recalculate compliance for the updated vehicle
-                let score = 100;
-                const overallStatus: string[] = [];
-                const v = vehicleToUpdate;
-                if (! (new Date(v.rto.registrationValidTill || 0) > new Date())) { score -= 20; overallStatus.push(`Reg Expired`); }
-                if (v.rto.insuranceStatus !== 'Active') { score -= 20; overallStatus.push(`Insurance Expired`); }
-                // ... full recalculation logic ...
-                v.compliance.score = Math.max(0, score);
-                v.compliance.overallStatus = overallStatus;
-                v.timestamp = new Date().toISOString();
+                // Recalculate compliance for the updated vehicle using the centralized service
+                const complianceData = calculateCompliance({
+                    plate: vehicleToUpdate.plate,
+                    rto: vehicleToUpdate.rto,
+                    fueling: vehicleToUpdate.fueling,
+                    helmet: vehicleToUpdate.helmet,
+                    vehicleType: vehicleToUpdate.vehicleType,
+                });
+                vehicleToUpdate.compliance = complianceData;
+                vehicleToUpdate.timestamp = new Date().toISOString();
             }
     
             setAnalysisResult(newData);
@@ -136,42 +127,42 @@ function App() {
         setAnalysisResult(null);
         setParsingError(null);
         setAnalysisProgress(initialAnalysisSteps);
-        setAppMode('upload');
-    }, []);
-
-    const renderContent = () => {
-        switch (appMode) {
-            case 'loading':
-                return <AnalysisProgressView steps={analysisProgress} />;
-            case 'dashboard':
-                return (
-                    <DashboardView 
-                        data={analysisResult || []} 
-                        onGenerateReport={handleGenerateReport} 
-                        onReset={handleReset}
-                        onRefreshData={handleRefreshData}
-                        isRefreshing={isRefreshing}
-                    />
-                );
-            case 'live':
-                return <LiveAnalysisView onSessionEnd={handleSessionEnd} onReset={handleReset} />;
-            case 'upload':
-            default:
-                return (
-                    <UploadView 
-                        onAnalyze={handleAnalyze} 
-                        isLoading={appMode === 'loading'}
-                        parsingError={parsingError}
-                        onClearParsingError={handleClearParsingError}
-                        onStartLive={handleStartLive}
-                    />
-                );
-        }
-    };
+        navigate('/');
+    }, [navigate]);
 
     return (
         <div className="min-h-screen">
-            {renderContent()}
+            <Routes>
+                <Route path="/loading" element={<AnalysisProgressView steps={analysisProgress} />} />
+                <Route 
+                    path="/dashboard" 
+                    element={
+                        <DashboardView 
+                            data={analysisResult || []} 
+                            onGenerateReport={handleGenerateReport} 
+                            onReset={handleReset}
+                            onRefreshData={handleRefreshData}
+                            isRefreshing={isRefreshing}
+                        />
+                    } 
+                />
+                <Route 
+                    path="/live" 
+                    element={<LiveAnalysisView onSessionEnd={handleSessionEnd} onReset={handleReset} />} 
+                />
+                <Route 
+                    path="/" 
+                    element={
+                        <UploadView 
+                            onAnalyze={handleAnalyze} 
+                            isLoading={false}
+                            parsingError={parsingError}
+                            onClearParsingError={handleClearParsingError}
+                            onStartLive={handleStartLive}
+                        />
+                    }
+                />
+            </Routes>
         </div>
     );
 }
