@@ -4,18 +4,16 @@ import { UploadView } from './components/UploadView';
 import { DashboardView } from './components/DashboardView';
 import { AnalysisProgressView } from './components/AnalysisProgressView';
 import { LiveAnalysisView } from './components/LiveAnalysisView';
-import { fetchTransactions, fetchAiDetections, fetchRtoData } from './services/apiService';
+import { startAnalysis } from './services/apiService';
 import { generateReport } from './services/pdfService';
 
 type AppMode = 'upload' | 'live' | 'loading' | 'dashboard';
 
 const initialAnalysisSteps: AnalysisStep[] = [
-    { title: 'Initializing AI Engine...', status: 'pending' },
-    { title: 'Fetching Transaction Data...', status: 'pending', progress: 0 },
-    { title: 'Fetching AI CCTV Detections...', status: 'pending', progress: 0 },
-    { title: 'Fetching RTO Records...', status: 'pending' },
-    { title: 'Correlating Datasets...', status: 'pending' },
-    { title: 'Finalizing Compliance Report...', status: 'pending' },
+    { title: 'Uploading files to analysis server...', status: 'pending' },
+    { title: 'Backend: Processing video & logs...', status: 'pending' },
+    { title: 'Correlating datasets & generating report...', status: 'pending' },
+    { title: 'Finalizing compliance results...', status: 'pending' },
 ];
 
 
@@ -119,51 +117,45 @@ function App() {
     
         const updateStepStatus = (index: number, status: AnalysisStep['status']) => {
             setAnalysisProgress(prev => prev.map((step, i) => {
-                if (i < index) return { ...step, status: 'complete', progress: 100 };
-                if (i === index) return { ...step, status, progress: step.progress === undefined ? undefined : 0 };
-                return { ...step, status: 'pending', progress: step.progress === undefined ? undefined : 0 };
+                if (i < index) return { ...step, status: 'complete' };
+                if (i === index) return { ...step, status };
+                return { ...step, status: 'pending' };
             }));
         };
     
         try {
-            // Step 0: Init
-            updateStepStatus(0, 'in-progress'); await wait(300);
+            // Step 0: Uploading files
+            updateStepStatus(0, 'in-progress');
+            const { transactions, aiDetections, rtoData } = await startAnalysis(
+                yoloModelFile,
+                videoFile,
+                transactionLog
+            );
+            updateStepStatus(0, 'complete');
 
-            // Step 1: Fetch Transactions
+            // Step 1: Backend Processing (simulated wait as API returns instantly)
             updateStepStatus(1, 'in-progress');
-            const transactions = await fetchTransactions(transactionLog).catch(err => {
-                throw new Error(`Error parsing transaction log: ${err.message}. Please check the file format.`);
-            });
-            if (transactions.length === 0 && transactionLog.trim() !== '') {
-                 throw new Error("Could not parse any transactions. The file might be empty or in an incorrect format.");
-            }
+            await wait(1000); 
+            updateStepStatus(1, 'complete');
 
-            // Step 2: Fetch AI Detections
+            // Step 2: Correlating
             updateStepStatus(2, 'in-progress');
-            const aiDetections = await fetchAiDetections(videoFile, yoloModelFile).catch(err => {
-                throw new Error(`AI analysis failed: ${err.message}. The video file might be corrupted or unsupported.`);
-            });
-            
-            // Step 3: Fetch RTO Data
-            updateStepStatus(3, 'in-progress');
-            const plates = [...new Set(transactions.map(t => t.plate))];
-            const rtoData = await fetchRtoData(plates).catch(err => {
-                throw new Error(`Could not fetch RTO data: ${err.message}. The service may be temporarily unavailable.`);
-            });
-            
-            // Step 4: Correlate
-            updateStepStatus(4, 'in-progress'); await wait(500);
-            
-            // Step 5: Finalize
-            updateStepStatus(5, 'in-progress'); await wait(500);
-
             const processed = processData(transactions, aiDetections, rtoData);
+            await wait(500);
+            updateStepStatus(2, 'complete');
+            
+            // Step 3: Finalizing
+            updateStepStatus(3, 'in-progress');
+            await wait(500);
+            updateStepStatus(3, 'complete');
+            
             setAnalysisResult(processed);
             setAppMode('dashboard');
 
         } catch (error) {
             console.error("Failed to process data:", error);
             const errorMessage = error instanceof Error ? error.message : "An unknown error occurred during analysis.";
+            // The error message from apiService is now specific enough to be displayed directly.
             setParsingError(errorMessage);
             setAppMode('upload'); // Go back to upload screen on error
         }
@@ -271,3 +263,7 @@ function App() {
         <div className="min-h-screen">
             {renderContent()}
         </div>
+    );
+}
+
+export default App;
