@@ -1,9 +1,10 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { ResponsiveContainer, RadialBarChart, RadialBar, PolarAngleAxis, Cell, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
 import { ProcessedVehicleData, ReportSections } from '../types';
-import { CheckCircleIcon, WarningIcon, XCircleIcon, SparklesIcon, ProcessingIcon, ChevronDownIcon, CogIcon, SearchIcon, CarIcon, MotorcycleIcon, TruckIcon, QuestionMarkIcon, MoneyIcon, RefreshIcon, ChartBarIcon } from './Icons';
+import { CheckCircleIcon, WarningIcon, XCircleIcon, SparklesIcon, ProcessingIcon, ChevronDownIcon, CogIcon, SearchIcon, CarIcon, MotorcycleIcon, TruckIcon, QuestionMarkIcon, MoneyIcon, RefreshIcon, ChartBarIcon, UsersIcon, ShieldCheckIcon } from './Icons';
 import { getComplianceSummary, getOverallSuggestions } from '../services/geminiService';
 import AiFleetRecommendations from './AiFleetRecommendations';
+import { Header } from './Header';
 
 interface DashboardViewProps {
   data: ProcessedVehicleData[];
@@ -106,6 +107,18 @@ const VehicleTypeIcon: React.FC<{ type: ProcessedVehicleData['vehicleType'] }> =
     }
 };
 
+const StatCard: React.FC<{ icon: React.ReactNode; label: string; value: string | number; }> = ({ icon, label, value }) => (
+    <div className="bg-basil/30 backdrop-blur-sm rounded-lg p-4 border border-bangladesh-green flex items-center gap-4">
+        <div className="p-3 bg-pine/50 rounded-md">
+            {icon}
+        </div>
+        <div>
+            <p className="text-stone text-sm">{label}</p>
+            <p className="text-anti-flash-white text-2xl font-bold">{value}</p>
+        </div>
+    </div>
+);
+
 
 export const DashboardView: React.FC<DashboardViewProps> = ({ data, onGenerateReport, onReset, onRefreshData, isRefreshing }) => {
     const [summaries, setSummaries] = useState<Record<string, string>>({});
@@ -144,6 +157,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ data, onGenerateRe
     }, [historyModalPlate, data]);
 
     const overallScore = data.reduce((acc, v) => acc + v.compliance.score, 0) / (data.length || 1);
+    const totalPendingFines = data.reduce((acc, v) => acc + v.rto.pendingFine, 0);
     const discrepancyData = data.filter(v => v.fueling.discrepancyFlag !== 'OK');
 
     const violationSummary = useMemo(() => {
@@ -491,35 +505,24 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ data, onGenerateRe
 
     return (
     <div className="p-4 md:p-8 min-h-screen animate-fade-in">
-        <header className="flex flex-wrap gap-4 justify-between items-center mb-6">
-            <h1 className="text-3xl font-bold text-caribbean-green tracking-wider">COMPLIANCE ANALYSIS</h1>
-            <div className="flex items-center gap-4">
-                <button
-                    onClick={onRefreshData}
-                    disabled={isRefreshing}
-                    className="flex items-center gap-2 border border-stone text-stone px-4 py-2 rounded-md hover:border-caribbean-green hover:text-caribbean-green hover:shadow-glow-green transition-all duration-300 disabled:opacity-50 disabled:cursor-wait"
-                >
-                    {isRefreshing ? (
-                        <ProcessingIcon className="w-5 h-5 animate-spin" />
-                    ) : (
-                        <RefreshIcon className="w-5 h-5" />
-                    )}
-                    {isRefreshing ? 'Fetching...' : 'Fetch Latest Data'}
-                </button>
-                <button 
-                    onClick={onReset} 
-                    className="border border-stone text-stone px-4 py-2 rounded-md hover:border-caribbean-green hover:text-caribbean-green hover:shadow-glow-green transition-all duration-300"
-                >
-                    New Analysis
-                </button>
+        <Header onReset={onReset} onRefreshData={onRefreshData} isRefreshing={isRefreshing} />
+
+        {/* Fleet Overview Stat Cards */}
+        <div className="mb-6 animate-slide-in-up">
+            <h2 className="text-xl font-semibold text-anti-flash-white mb-4">Fleet Overview</h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                <StatCard icon={<UsersIcon className="w-8 h-8 text-caribbean-green" />} label="Vehicles Analyzed" value={data.length} />
+                <StatCard icon={<ShieldCheckIcon className="w-8 h-8 text-caribbean-green" />} label="Fleet Compliance Score" value={overallScore.toFixed(1)} />
+                <StatCard icon={<MoneyIcon className="w-8 h-8 text-caribbean-green" />} label="Total Pending Fines" value={`₹${totalPendingFines.toLocaleString('en-IN')}`} />
+                <StatCard icon={<WarningIcon className="w-8 h-8 text-caribbean-green" />} label="Active Fueling Alerts" value={discrepancyData.length} />
             </div>
-        </header>
+        </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 xl:grid-cols-4 gap-6">
             {/* Left Panel */}
             <div className="lg:col-span-2 xl:col-span-3 space-y-6">
                  {/* Unified Compliance Table */}
-                 <div className="bg-basil/30 backdrop-blur-sm rounded-lg p-4 border border-bangladesh-green animate-slide-in-up">
+                 <div className="bg-basil/30 backdrop-blur-sm rounded-lg p-4 border border-bangladesh-green animate-slide-in-up" style={{ animationDelay: '100ms'}}>
                     <div className="flex flex-wrap gap-2 justify-between items-center mb-4">
                         <h2 className="text-xl font-semibold text-anti-flash-white">Unified Compliance Table</h2>
                         <div className="text-sm font-semibold text-stone bg-pine/50 px-3 py-1 rounded-md border border-bangladesh-green/50">
@@ -855,7 +858,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ data, onGenerateRe
 
             {/* Right Panel */}
             <div className="lg:col-span-1 xl:col-span-1 space-y-6">
-                <div className="bg-basil/30 backdrop-blur-sm rounded-lg p-6 border border-bangladesh-green animate-slide-in-up" style={{ animationDelay: '100ms'}}>
+                <div className="bg-basil/30 backdrop-blur-sm rounded-lg p-6 border border-bangladesh-green animate-slide-in-up" style={{ animationDelay: '200ms'}}>
                     <h2 className="text-xl font-semibold text-anti-flash-white mb-4 text-center">Overall Compliance Score</h2>
                     <ComplianceGauge score={overallScore} />
                 </div>
@@ -989,7 +992,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ data, onGenerateRe
                                     />
                                     Fueling Discrepancy Analysis
                                  </label>
-                                 <label className="flex items-center gap-3 cursor-pointer">
+                                 <label className="flex items-center gap-3 cursor-pointer relative">
                                     <input 
                                         type="checkbox" 
                                         name="includeDetailedInsights"
@@ -998,6 +1001,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ data, onGenerateRe
                                         className="bg-transparent border-stone rounded focus:ring-caribbean-green text-caribbean-green cursor-pointer" 
                                     />
                                     Detailed Vehicle Insights (AI & RTO)
+                                    <span className="ml-2 bg-caribbean-green text-rich-black text-xs font-bold px-2 py-0.5 rounded-full shadow-lg">PRO</span>
                                  </label>
                              </div>
                         </div>

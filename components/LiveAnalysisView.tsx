@@ -2,9 +2,11 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { AiDetection, ProcessedVehicleData, RtoData, Transaction } from '../types';
 import { mockAiDetections, mockRtoDatabase } from '../services/mockData';
 import { PlayIcon, StopIcon, XCircleIcon, CheckCircleIcon } from './Icons';
+import { Header } from './Header';
 
 interface LiveAnalysisViewProps {
   onSessionEnd: (results: ProcessedVehicleData[]) => void;
+  onReset: () => void;
 }
 
 const processSingleVehicle = (tx: Transaction, detection: AiDetection, rto: RtoData): ProcessedVehicleData => {
@@ -50,7 +52,7 @@ const processSingleVehicle = (tx: Transaction, detection: AiDetection, rto: RtoD
     };
 };
 
-export const LiveAnalysisView: React.FC<LiveAnalysisViewProps> = ({ onSessionEnd }) => {
+export const LiveAnalysisView: React.FC<LiveAnalysisViewProps> = ({ onSessionEnd, onReset }) => {
     const [isStreaming, setIsStreaming] = useState(false);
     const [detectedVehicles, setDetectedVehicles] = useState<ProcessedVehicleData[]>([]);
     const [error, setError] = useState<string | null>(null);
@@ -127,15 +129,7 @@ export const LiveAnalysisView: React.FC<LiveAnalysisViewProps> = ({ onSessionEnd
     
     return (
         <div className="min-h-screen flex flex-col p-4 md:p-8 animate-fade-in bg-rich-black">
-            <header className="flex justify-between items-center mb-6">
-                <h1 className="text-3xl font-bold text-caribbean-green tracking-wider">LIVE COMPLIANCE MONITORING</h1>
-                <button 
-                    onClick={handleFinishSession} 
-                    className="border border-stone text-stone px-6 py-2 rounded-md hover:border-caribbean-green hover:text-caribbean-green hover:shadow-glow-green transition-all duration-300 font-bold"
-                >
-                    Finish Session & View Report
-                </button>
-            </header>
+            <Header onReset={onReset} isLive />
 
             {error ? (
                  <div className="flex-grow flex items-center justify-center">
@@ -143,6 +137,12 @@ export const LiveAnalysisView: React.FC<LiveAnalysisViewProps> = ({ onSessionEnd
                         <XCircleIcon className="w-16 h-16 text-red-500 mx-auto mb-4" />
                         <h2 className="text-2xl font-bold text-anti-flash-white mb-2">Camera Error</h2>
                         <p className="text-stone">{error}</p>
+                        <button
+                            onClick={onReset}
+                            className="mt-6 text-lg font-bold bg-caribbean-green text-rich-black px-8 py-3 rounded-md hover:bg-mountain-meadow hover:shadow-glow-green-lg transition-all duration-300"
+                        >
+                            Go Back
+                        </button>
                     </div>
                 </div>
             ) : (
@@ -150,17 +150,25 @@ export const LiveAnalysisView: React.FC<LiveAnalysisViewProps> = ({ onSessionEnd
                     <div className="lg:col-span-2 bg-basil/30 border border-bangladesh-green rounded-lg p-4 flex flex-col">
                         <div className="flex justify-between items-center mb-4">
                              <h2 className="text-xl font-semibold text-anti-flash-white">Live CCTV Feed</h2>
-                             <button
-                                onClick={isStreaming ? stopSimulation : startSimulation}
-                                className={`flex items-center gap-2 px-6 py-2 rounded-md font-bold text-lg transition-all ${
-                                    isStreaming 
-                                    ? 'bg-red-500/80 text-white hover:bg-red-600' 
-                                    : 'bg-caribbean-green text-rich-black hover:bg-mountain-meadow'
-                                }`}
-                            >
-                                {isStreaming ? <StopIcon className="w-6 h-6" /> : <PlayIcon className="w-6 h-6" />}
-                                {isStreaming ? 'PAUSE ANALYSIS' : 'START ANALYSIS'}
-                            </button>
+                             <div className="flex items-center gap-4">
+                                <button
+                                    onClick={isStreaming ? stopSimulation : startSimulation}
+                                    className={`flex items-center gap-2 px-6 py-2 rounded-md font-bold text-lg transition-all ${
+                                        isStreaming 
+                                        ? 'bg-red-500/80 text-white hover:bg-red-600' 
+                                        : 'bg-caribbean-green text-rich-black hover:bg-mountain-meadow'
+                                    }`}
+                                >
+                                    {isStreaming ? <StopIcon className="w-6 h-6" /> : <PlayIcon className="w-6 h-6" />}
+                                    {isStreaming ? 'PAUSE' : 'START'}
+                                </button>
+                                <button 
+                                    onClick={handleFinishSession} 
+                                    className="border border-stone text-stone px-6 py-2 rounded-md hover:border-caribbean-green hover:text-caribbean-green hover:shadow-glow-green transition-all duration-300 font-bold"
+                                >
+                                    Finish Session
+                                </button>
+                             </div>
                         </div>
                         <div className="relative flex-grow w-full bg-rich-black rounded-md overflow-hidden aspect-video">
                            <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover"></video>

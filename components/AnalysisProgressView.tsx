@@ -38,7 +38,7 @@ export const AnalysisProgressView: React.FC<AnalysisProgressViewProps> = ({ step
                                 <p className={`text-lg font-semibold transition-colors ${step.status === 'pending' ? 'text-stone' : 'text-anti-flash-white'}`}>
                                     {step.title}
                                 </p>
-                                {step.status === 'in-progress' && typeof step.progress === 'number' && (
+                                {step.status === 'in-progress' && typeof step.progress === 'number' && step.progress > 0 && (
                                     <div className="w-full bg-basil rounded-full h-2.5 mt-2">
                                         <div 
                                             className="bg-caribbean-green h-2.5 rounded-full transition-all duration-500" 

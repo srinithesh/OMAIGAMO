@@ -114,11 +114,23 @@ export const parseTransactions = (fileContent: string): Transaction[] => {
       continue;
     }
 
+    const billedLitersStr = headerMap.billedLiters !== -1 ? values[headerMap.billedLiters] : '0';
+    const billedLitersNum = parseFloat(billedLitersStr);
+    if (isNaN(billedLitersNum)) {
+        throw new Error(`Invalid data in row ${i + 1}: 'Billed_Liters' is not a valid number ('${billedLitersStr}').`);
+    }
+
+    const amountStr = headerMap.amount !== -1 ? values[headerMap.amount] : '0';
+    const amountNum = parseFloat(amountStr);
+    if (isNaN(amountNum)) {
+        throw new Error(`Invalid data in row ${i + 1}: 'Amount (₹)' is not a valid number ('${amountStr}').`);
+    }
+
     const transaction: Transaction = {
       timestamp: headerMap.timestamp !== -1 ? values[headerMap.timestamp] : new Date().toISOString(),
       plate: plate,
-      billedLiters: headerMap.billedLiters !== -1 ? parseFloat(values[headerMap.billedLiters]) || 0 : 0,
-      amount: headerMap.amount !== -1 ? parseFloat(values[headerMap.amount]) || 0 : 0,
+      billedLiters: billedLitersNum,
+      amount: amountNum,
       stationId: headerMap.stationId !== -1 ? values[headerMap.stationId] : 'N/A',
     };
     
