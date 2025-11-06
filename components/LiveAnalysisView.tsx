@@ -1,23 +1,22 @@
-
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { AiDetection, ProcessedVehicleData, RtoData, Transaction } from '../types';
-import { mockAiDetections, mockRtoDatabase } from '../services/mockData';
-import { PlayIcon, StopIcon, XCircleIcon, CheckCircleIcon } from './Icons';
+import { ProcessedVehicleData } from '../types';
+import { PlayIcon, StopIcon, XCircleIcon, CheckCircleIcon, ProcessingIcon } from './Icons';
 import { Header } from './Header';
-import { processLiveData } from '../services/dataProcessingService';
+import { analyzeLiveFrame } from '../services/apiService';
 
-interface LiveAnalysisViewProps {
+
+export const LiveAnalysisView: React.FC<{
   onSessionEnd: (results: ProcessedVehicleData[]) => void;
   onReset: () => void;
-}
-
-export const LiveAnalysisView: React.FC<LiveAnalysisViewProps> = ({ onSessionEnd, onReset }) => {
+}> = ({ onSessionEnd, onReset }) => {
     const [isStreaming, setIsStreaming] = useState(false);
+    const [isAnalyzing, setIsAnalyzing] = useState(false);
     const [detectedVehicles, setDetectedVehicles] = useState<ProcessedVehicleData[]>([]);
     const [error, setError] = useState<string | null>(null);
     const videoRef = useRef<HTMLVideoElement>(null);
+    const canvasRef = useRef<HTMLCanvasElement>(null);
     const streamRef = useRef<MediaStream | null>(null);
-    const intervalRef = useRef<number | null>(null);
+    const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
     
     const cleanupCamera = useCallback(() => {
         if (streamRef.current) {
@@ -51,28 +50,39 @@ export const LiveAnalysisView: React.FC<LiveAnalysisViewProps> = ({ onSessionEnd
         };
     }, [cleanupCamera]);
 
-    const startSimulation = () => {
-        setIsStreaming(true);
-        intervalRef.current = window.setInterval(() => {
-            const randomIndex = Math.floor(Math.random() * mockAiDetections.length);
-            const detection = mockAiDetections[randomIndex];
-            const rto = mockRtoDatabase[detection.plate];
+    const captureAndAnalyzeFrame = useCallback(async () => {
+        if (isAnalyzing || !videoRef.current || !canvasRef.current) return;
+
+        setIsAnalyzing(true);
+        const video = videoRef.current;
+        const canvas = canvasRef.current;
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        const context = canvas.getContext('2d');
+        if (context) {
+            context.drawImage(video, 0, 0, canvas.width, canvas.height);
+            const frameData = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
             
-            if (detection && rto) {
-                const transaction: Transaction = {
-                    plate: detection.plate,
-                    timestamp: new Date().toISOString(),
-                    amount: 0,
-                    billedLiters: 0,
-                    stationId: 'LIVE-01'
-                };
-                const processed = processLiveData(transaction, detection, rto);
-                setDetectedVehicles(prev => [processed, ...prev].slice(0, 50)); // Keep the list from getting too long
+            try {
+                const result = await analyzeLiveFrame(frameData);
+                if (result) {
+                     setDetectedVehicles(prev => [result, ...prev].slice(0, 50)); // Keep the list from growing indefinitely
+                }
+            } catch (err) {
+                console.error("Error analyzing frame:", err);
+                // Optionally show a temporary error to the user
             }
-        }, 3000); // New detection every 3 seconds
+        }
+        setIsAnalyzing(false);
+    }, [isAnalyzing]);
+
+    const startStreaming = () => {
+        if (intervalRef.current) clearInterval(intervalRef.current);
+        setIsStreaming(true);
+        intervalRef.current = setInterval(captureAndAnalyzeFrame, 2000); // Analyze every 2 seconds
     };
 
-    const stopSimulation = () => {
+    const stopStreaming = () => {
         setIsStreaming(false);
         if (intervalRef.current) {
             clearInterval(intervalRef.current);
@@ -81,7 +91,7 @@ export const LiveAnalysisView: React.FC<LiveAnalysisViewProps> = ({ onSessionEnd
     };
 
     const handleFinishSession = () => {
-        stopSimulation();
+        stopStreaming();
         cleanupCamera();
         onSessionEnd(detectedVehicles);
     };
@@ -89,6 +99,7 @@ export const LiveAnalysisView: React.FC<LiveAnalysisViewProps> = ({ onSessionEnd
     return (
         <div className="min-h-screen flex flex-col p-4 md:p-8 animate-fade-in bg-rich-black">
             <Header onReset={onReset} isLive />
+            <canvas ref={canvasRef} className="hidden"></canvas>
 
             {error ? (
                  <div className="flex-grow flex items-center justify-center">
@@ -111,7 +122,7 @@ export const LiveAnalysisView: React.FC<LiveAnalysisViewProps> = ({ onSessionEnd
                              <h2 className="text-xl font-semibold text-anti-flash-white">Live CCTV Feed</h2>
                              <div className="flex items-center gap-4">
                                 <button
-                                    onClick={isStreaming ? stopSimulation : startSimulation}
+                                    onClick={isStreaming ? stopStreaming : startStreaming}
                                     className={`flex items-center gap-2 px-6 py-2 rounded-md font-bold text-lg transition-all ${
                                         isStreaming 
                                         ? 'bg-red-500/80 text-white hover:bg-red-600' 
@@ -137,6 +148,12 @@ export const LiveAnalysisView: React.FC<LiveAnalysisViewProps> = ({ onSessionEnd
                                     LIVE
                                 </div>
                            )}
+                           {isAnalyzing && (
+                                <div className="absolute bottom-4 left-4 flex items-center gap-2 bg-caribbean-green/20 text-caribbean-green px-3 py-1 rounded-md text-sm font-bold">
+                                    <ProcessingIcon className="w-4 h-4 animate-spin" />
+                                    ANALYZING...
+                                </div>
+                           )}
                         </div>
                     </div>
                     <div className="lg:col-span-1 bg-basil/30 border border-bangladesh-green rounded-lg p-4 flex flex-col">
@@ -158,7 +175,7 @@ export const LiveAnalysisView: React.FC<LiveAnalysisViewProps> = ({ onSessionEnd
                                             v.compliance.overallStatus.map((status, i) => (
                                                 <div key={i} className="flex items-center gap-2 text-red-400">
                                                    <XCircleIcon className="w-4 h-4 flex-shrink-0" />
-                                                   <span>{status.split(' for ')[0].split(' on ')[0]}</span>
+                                                   <span>{status}</span>
                                                 </div>
                                             ))
                                         ) : (

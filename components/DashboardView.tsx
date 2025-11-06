@@ -96,14 +96,15 @@ const ComplianceGauge: React.FC<{ score: number }> = ({ score }) => {
 const VehicleTypeIcon: React.FC<{ type: ProcessedVehicleData['vehicleType'] }> = ({ type }) => {
     const baseClass = "w-8 h-8";
     switch (type) {
+        // FIX: Replaced `title` prop with a `<title>` child element for accessibility and to fix type errors.
         case '2-Wheeler':
-            return <MotorcycleIcon className={`${baseClass} text-pistachio`} title="2-Wheeler" />;
+            return <MotorcycleIcon className={`${baseClass} text-pistachio`}><title>2-Wheeler</title></MotorcycleIcon>;
         case '4-Wheeler':
-            return <CarIcon className={`${baseClass} text-pistachio`} title="4-Wheeler" />;
+            return <CarIcon className={`${baseClass} text-pistachio`}><title>4-Wheeler</title></CarIcon>;
         case 'Truck':
-            return <TruckIcon className={`${baseClass} text-pistachio`} title="Truck" />;
+            return <TruckIcon className={`${baseClass} text-pistachio`}><title>Truck</title></TruckIcon>;
         default:
-            return <QuestionMarkIcon className="w-7 h-7 text-stone" title="Other" />;
+            return <QuestionMarkIcon className="w-7 h-7 text-stone"><title>Other</title></QuestionMarkIcon>;
     }
 };
 
